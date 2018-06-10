@@ -1,0 +1,7 @@
+[workspace]
+
+members = [
+    "retreat-server",
+    "retreat-client",
+    "retreat-shared",
+]

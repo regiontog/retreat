@@ -1,0 +1,7 @@
+[package]
+name = "retreat-server"
+version = "0.1.0"
+authors = ["Erlend Tobiassen <erlentob@stud.ntnu.no>"]
+
+[dependencies]
+mio = "0.6"
