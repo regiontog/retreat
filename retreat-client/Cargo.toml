@@ -3,5 +3,12 @@ name = "retreat-client"
 version = "0.1.0"
 authors = ["Erlend Tobiassen <erlentob@stud.ntnu.no>"]
 
+[[bin]]
+name = "retreat-client"
+path = "src/client.rs"
+
 [dependencies]
-mio = "0.6"
+mio = "0.6.14"
+winit = "0.15.1"
+retreat-shared = {path = "../retreat-shared", version = "0.1.0"}
+capnp = "0.8.17"

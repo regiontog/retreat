@@ -3,4 +3,14 @@ name = "retreat-shared"
 version = "0.1.0"
 authors = ["Erlend Tobiassen <erlentob@stud.ntnu.no>"]
 
+build = "build.rs"
+
+[lib]
+name = "rlib"
+path = "src/game.rs"
+
 [dependencies]
+capnp = "0.8.17"
+
+[build-dependencies]
+capnpc = "0.8.9"
