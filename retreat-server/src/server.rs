@@ -23,17 +23,20 @@ fn main() {
 
     game_loop(TICKS_PER_SECOND, |start, tick, next_tick| {
         println!("ring {}", tick);
-        poll.poll(&mut events, Some(next_tick - start.elapsed()))
-            .unwrap();
-        for event in events.iter() {
-            match event.token() {
-                ACTIONS => {
-                    let (num_recv, addr) = server.recv_from(&mut buffer).unwrap();
-                    server.send_to(&buffer, &addr).unwrap();
-                    println!("echo {:?} -> {:?}", buffer, num_recv);
-                    buffer = [0; 9];
+        let wait = next_tick.checked_sub(start.elapsed());
+
+        if wait.is_some() {
+            poll.poll(&mut events, wait).unwrap();
+            for event in events.iter() {
+                match event.token() {
+                    ACTIONS => {
+                        let (num_recv, addr) = server.recv_from(&mut buffer).unwrap();
+                        server.send_to(&buffer, &addr).unwrap();
+                        println!("echo {:?} -> {:?}", buffer, num_recv);
+                        buffer = [0; 9];
+                    }
+                    _ => unreachable!(),
                 }
-                _ => unreachable!(),
             }
         }
     });

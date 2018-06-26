@@ -103,8 +103,9 @@ pub mod game {
                     Err(_) => unreachable!(),
                 }
             }
-
-            self.world[(player.pos.0 + player.pos.1 * 3) as usize] = player.id as u8;
+            
+            self.world = [0, 0, 0, 0, 0, 0, 0, 0, 0];
+            self.world[((player.pos.0 + player.pos.1 * 3) % 3*3) as usize] = player.id as u8;
         }
 
         pub fn new() -> GameState {
