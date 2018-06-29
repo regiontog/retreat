@@ -60,7 +60,7 @@ pub mod game {
 
     pub struct GameState {
         pub frame: u8,
-        pub world: [u8; 3 * 3],
+        pub world: [[u8; 3]; 3],
     }
 
     impl Player {
@@ -75,10 +75,10 @@ pub mod game {
             match action {
                 action::Which::Move(mov) => match mov {
                     Ok(mov) => match mov {
-                        Direction::Forward => self.pos.0 += 1,
-                        Direction::Backward => self.pos.0 -= 1,
-                        Direction::Left => self.pos.1 += 1,
-                        Direction::Right => self.pos.1 -= 1,
+                        Direction::Forward => self.pos.0 = self.pos.0.wrapping_sub(1),
+                        Direction::Backward => self.pos.0 = self.pos.0.wrapping_add(1),
+                        Direction::Left => self.pos.1 = self.pos.1.wrapping_sub(1),
+                        Direction::Right => self.pos.1 = self.pos.1.wrapping_add(1),
                     },
                     Err(_) => unreachable!(),
                 },
@@ -103,15 +103,15 @@ pub mod game {
                     Err(_) => unreachable!(),
                 }
             }
-            
-            self.world = [0, 0, 0, 0, 0, 0, 0, 0, 0];
-            self.world[((player.pos.0 + player.pos.1 * 3) % 3*3) as usize] = player.id as u8;
+
+            self.world = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+            self.world[(player.pos.0 % 3) as usize][(player.pos.1 % 3) as usize] = player.id as u8;
         }
 
         pub fn new() -> GameState {
             GameState {
                 frame: 0,
-                world: [0, 0, 0, 0, 0, 0, 0, 0, 0],
+                world: [[0, 0, 0], [0, 0, 0], [0, 0, 0]],
             }
         }
     }
