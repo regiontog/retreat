@@ -1,0 +1,11 @@
+[package]
+name = "noser"
+version = "0.1.0"
+authors = ["Erlend Tobiassen <erlentob@stud.ntnu.no>"]
+
+[lib]
+name = "noser"
+path = "src/noser.rs"
+
+[dev-dependencies]
+crossbeam = "0.3.2"

@@ -5,4 +5,5 @@ members = [
     "retreat-client",
     "retreat-shared",
     "noserc",
+    "noser",
 ]
