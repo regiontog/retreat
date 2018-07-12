@@ -7,5 +7,5 @@ authors = ["Erlend Tobiassen <erlentob@stud.ntnu.no>"]
 name = "noser"
 path = "src/noser.rs"
 
-[dev-dependencies]
-crossbeam = "0.3.2"
+[dependencies]
+boxfnonce = "0.1.0"

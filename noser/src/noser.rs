@@ -1,214 +1,172 @@
+extern crate boxfnonce;
+
+use std::cell::Cell;
 use std::marker::PhantomData;
-use std::ops::{Index, IndexMut};
 
-#[derive(Clone, Copy)]
-struct Token(usize);
-
-trait SizeChangeListener {
-    fn size_changed(&self, u32, Token);
+trait DynamicSize {
+    fn size(&self) -> u32;
 }
 
-trait ListenerManager<'a> {
-    fn register(&mut self, &'a SizeChangeListener, Token);
-    fn size_changed(&self, u32);
-}
-
-struct VecListenerManager<'a> {
-    listeners: Vec<(&'a SizeChangeListener, Token)>,
-}
-
-impl<'a> VecListenerManager<'a> {
-    fn new() -> Self {
-        VecListenerManager {
-            listeners: Vec::new(),
-        }
-    }
-}
-
-impl<'a> ListenerManager<'a> for VecListenerManager<'a> {
-    fn register(&mut self, listener: &'a SizeChangeListener, id: Token) {
-        self.listeners.push((listener, id));
-    }
-
-    fn size_changed(&self, size: u32) {
-        for (listener, id) in &self.listeners {
-            listener.size_changed(size, *id);
-        }
-    }
-}
-
-struct NoopListenerManager;
-
-impl<'a> ListenerManager<'a> for NoopListenerManager {
-    fn register(&mut self, listener: &'a SizeChangeListener, id: Token) {}
-    fn size_changed(&self, size: u32) {}
-}
-
-const NOOP_CALLBACK_MANAGER: NoopListenerManager = NoopListenerManager {};
-
-trait NoserDynSized<'a> {
-    fn listener_manager(&self) -> &'a ListenerManager;
-    fn initial_size() -> u32;
-}
-
-trait NoserStaticallySized {
+trait StaticSize {
     fn size() -> u32;
 }
 
-impl<T: NoserStaticallySized> NoserDynSized<'static> for T {
-    fn initial_size() -> u32 {
-        Self::size()
-    }
-
-    fn listener_manager(&self) -> &'static ListenerManager {
-        // Noop because statically sized types never change size, duh.
-        &NOOP_CALLBACK_MANAGER
-    }
+trait NoserWithArena<'a> {
+    fn with_arena(&'a mut [u8]) -> Self;
 }
 
-trait NoserType<'a>: NoserDynSized<'a> {
-    type Input;
-    type Output;
-
-    fn read(&[u8]) -> Self::Output;
-    fn write(&mut [u8], Self::Input);
+trait NoserDynamicWithArena<'a, T> {
+    fn with_arena(self, &'a mut [u8]) -> T;
 }
 
-struct Owned<'a, N> {
-    phantom: PhantomData<N>,
+struct NoserBorrowed<'a, T> {
     arena: &'a mut [u8],
+    phantom: PhantomData<T>,
 }
 
-impl<'a, N: NoserType<'a>> Owned<'a, N> {
-    fn new(arena: &'a mut [u8]) -> Owned<'a, N> {
-        Owned {
+impl<'a, T: StaticSize> StaticSize for NoserBorrowed<'a, T> {
+    fn size() -> u32 {
+        T::size()
+    }
+}
+
+impl<'a, T> NoserWithArena<'a> for NoserBorrowed<'a, T> {
+    fn with_arena(arena: &'a mut [u8]) -> Self {
+        NoserBorrowed {
             arena: arena,
             phantom: PhantomData,
         }
     }
+}
 
-    fn get(&self) -> N::Output {
-        N::read(self.arena)
+trait NoserType<T> {
+    fn write(&mut self, val: T);
+    fn read(&self) -> T;
+}
+
+impl<'a> NoserType<u8> for NoserBorrowed<'a, u8> {
+    fn write(&mut self, val: u8) {
+        self.arena[0] = val;
     }
 
-    fn set(&mut self, value: N::Input) {
-        N::write(&mut self.arena, value)
+    fn read(&self) -> u8 {
+        self.arena[0]
     }
 }
 
-struct NoserList<'a, T> {
-    items: Vec<Owned<'a, T>>,
-    lm: VecListenerManager<'a>,
-}
-
-impl<'a, T: NoserType<'a>> Index<u32> for NoserList<'a, T> {
-    type Output = Owned<'a, T>;
-
-    fn index<'b>(&'b self, index: u32) -> &'b Owned<'a, T> {
-        &self.items[index as usize]
-    }
-}
-
-impl<'a, T: NoserType<'a>> IndexMut<u32> for NoserList<'a, T> {
-    fn index_mut<'b>(&'b mut self, index: u32) -> &'b mut Owned<'a, T> {
-        &mut self.items[index as usize]
-    }
-}
-
-impl<'a, T: NoserType<'a>> NoserList<'a, T> {
-    fn with_capacity(arena: &'a mut [u8], num_elems: u32) -> NoserList<'a, T> {
-        let mut items = Vec::with_capacity(num_elems as usize);
-
-        let elem_size = T::initial_size() as usize;
-
-        for i in 0..num_elems as usize {
-            items.push(Owned::new(&mut arena[elem_size * i..elem_size * (i + 1)]));
-        }
-
-        NoserList {
-            items: items,
-            lm: VecListenerManager::new(),
-        }
-    }
-}
-
-impl<'a, T: NoserType<'a>> NoserDynSized<'a> for NoserList<'a, T> {
-    fn listener_manager(&self) -> &'a ListenerManager {
-        &self.lm
-    }
-
-    fn initial_size() -> u32 {
-        0
-    }
-}
-
-impl<'a, T: NoserType<'a>> NoserType<'a> for NoserList<'a, T> {
-    type Input = Vec<T>;
-    type Output = Vec<T>;
-
-    fn read(arena: &[u8]) -> Vec<T> {
-        // let result = Vec::new();
-
-        // let num_elems = u32::read(arena);
-        // let bytes = T::size() * num_elems;
-
-        // for i in 0..bytes {}
-        unimplemented!()
-    }
-
-    fn write(arena: &mut [u8], input: Vec<T>) {}
-}
-
-impl NoserType<'static> for u8 {
-    type Input = u8;
-    type Output = u8;
-
-    fn read(arena: &[u8]) -> u8 {
-        arena[0]
-    }
-
-    fn write(arena: &mut [u8], input: u8) {
-        arena[0] = input
-    }
-}
-
-impl NoserStaticallySized for u8 {
+impl StaticSize for u8 {
     fn size() -> u32 {
         1
     }
 }
 
-impl NoserType<'static> for u64 {
-    type Input = u64;
-    type Output = u64;
+struct NoserList<T> {
+    items: Vec<T>,
+}
 
-    fn read(arena: &[u8]) -> u64 {
-        let mut result = 0;
-        result |= arena[0] as u64;
-        result |= (arena[1] as u64) << 8;
-        result |= (arena[2] as u64) << 16;
-        result |= (arena[3] as u64) << 24;
-        result |= (arena[4] as u64) << 32;
-        result |= (arena[5] as u64) << 40;
-        result |= (arena[6] as u64) << 48;
-        result |= (arena[7] as u64) << 56;
-        result
-    }
+use boxfnonce::BoxFnOnce;
 
-    fn write(arena: &mut [u8], input: u64) {
-        arena[0] = input as u8;
-        arena[1] = (input << 8) as u8;
-        arena[2] = (input << 16) as u8;
-        arena[3] = (input << 24) as u8;
-        arena[4] = (input << 32) as u8;
-        arena[5] = (input << 40) as u8;
-        arena[6] = (input << 48) as u8;
-        arena[7] = (input << 56) as u8;
+struct NoserListFactory<'a, T> {
+    size: u32,
+    items_factory: BoxFnOnce<'a, (&'a mut [u8],), Vec<T>>,
+}
+
+impl<'a, T> DynamicSize for NoserListFactory<'a, T> {
+    fn size(&self) -> u32 {
+        self.size
     }
 }
 
-impl NoserStaticallySized for u64 {
-    fn size() -> u32 {
-        8
+impl<'a, T> NoserDynamicWithArena<'a, NoserList<T>> for NoserListFactory<'a, T> {
+    fn with_arena(self, arena: &'a mut [u8]) -> NoserList<T> {
+        NoserList {
+            items: self.items_factory.call(arena),
+        }
+    }
+}
+
+impl<'a, R> NoserListFactory<'a, R> {
+    fn with<A: 'a + DynamicSize + NoserDynamicWithArena<'a, R>>(
+        items: Vec<A>,
+    ) -> NoserListFactory<'a, R> {
+        NoserListFactory {
+            size: items.iter().map(|item| item.size()).sum(),
+            items_factory: BoxFnOnce::from(move |arena: &'a mut [u8]| {
+                let cell = Cell::new(arena);
+                items
+                    .into_iter()
+                    .map(|item| {
+                        let (left, right) = cell.take().split_at_mut(item.size() as usize);
+
+                        cell.set(right);
+                        item.with_arena(left)
+                    })
+                    .collect()
+            }),
+        }
+    }
+}
+
+impl<'a, T: StaticSize + NoserWithArena<'a>> NoserListFactory<'a, T> {
+    fn with_capacity(len: u32) -> Self {
+        let size = T::size();
+
+        NoserListFactory {
+            size: len * size,
+            items_factory: BoxFnOnce::from(move |arena: &'a mut [u8]| {
+                let mut items = Vec::with_capacity(len as usize);
+                let cell = Cell::new(arena);
+
+                for _ in 0..(len / size) as usize {
+                    let (left, right) = cell.take().split_at_mut(size as usize);
+
+                    items.push(T::with_arena(left));
+                    cell.set(right);
+                }
+
+                items
+            }),
+        }
+    }
+}
+
+impl<T> NoserList<T> {
+    fn get(&mut self, idx: u32) -> &mut T {
+        &mut self.items[idx as usize]
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use *;
+
+    #[test]
+    fn test() {
+        let ref mut arena = [0; 10];
+
+        {
+            let mut l = NoserListFactory::with(vec![
+                NoserListFactory::<NoserBorrowed<u8>>::with_capacity(2),
+                NoserListFactory::with_capacity(2),
+            ]).with_arena(arena);
+
+            l.get(0).get(0).write(10);
+            assert_eq!(l.get(0).get(0).read(), 10);
+            l.get(0).get(1).write(11);
+            assert_eq!(l.get(0).get(0).read(), 10);
+            assert_eq!(l.get(0).get(1).read(), 11);
+            l.get(1).get(0).write(12);
+            assert_eq!(l.get(0).get(0).read(), 10);
+            assert_eq!(l.get(0).get(1).read(), 11);
+            assert_eq!(l.get(1).get(0).read(), 12);
+            l.get(1).get(1).write(13);
+            assert_eq!(l.get(0).get(0).read(), 10);
+            assert_eq!(l.get(0).get(1).read(), 11);
+            assert_eq!(l.get(1).get(0).read(), 12);
+            assert_eq!(l.get(1).get(1).read(), 13);
+        }
+
+        println!("{:?}", arena);
+        panic!();
     }
 }
