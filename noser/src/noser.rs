@@ -10,6 +10,13 @@ pub mod union {
     pub use implementation::union::{read_var_len_int, write_var_len_int};
 }
 
+#[derive(Debug)]
+enum NoserError<'a> {
+    Undersized(u64, &'a mut [u8]),
+}
+
+type Result<'a, T> = ::std::result::Result<T, NoserError<'a>>;
+
 use traits::Build;
 
 enum Enumm<'a> {
@@ -29,12 +36,12 @@ impl<'a> ::traits::Variants<'a> for Enumm<'a> {
         }
     }
 
-    fn variant(var: u64, arena: &'a mut [u8]) -> (&'a mut [u8], Self) {
+    fn variant(var: u64, arena: &'a mut [u8]) -> Result<'a, (&'a mut [u8], Self)> {
         match var {
-            0 => (arena, Enumm::None),
+            0 => Ok((arena, Enumm::None)),
             1 => {
-                let (right, inner) = List::build(arena);
-                (right, Enumm::Some(inner))
+                let (right, inner) = List::build(arena)?;
+                Ok((right, Enumm::Some(inner)))
             }
             _ => unreachable!(),
         }
@@ -47,14 +54,14 @@ where
 {
     fn from(dynamic_type: T) -> Self {
         ::Union::new(dynamic_type.dsize(), |arena| {
-            Enumm::Some(dynamic_type.with_arena(arena))
+            Ok(Enumm::Some(dynamic_type.with_arena(arena)?))
         })
     }
 }
 
 impl<'a> From<Enumm<'a>> for ::Union<'a, Enumm<'a>> {
     fn from(variant: Enumm<'a>) -> Self {
-        ::Union::new(0, |arena| variant)
+        ::Union::new(0, |arena| Ok(variant))
     }
 }
 
@@ -75,7 +82,7 @@ mod tests {
             let desc = Union::with_variant(List::with(vec![List::<Literal<u8>>::with_capacity(2)]));
             // let desc = Union::with_variant(Enumm::None);
 
-            if let Enumm::Some(mut list) = desc.with_arena(arena) {
+            if let Enumm::Some(mut list) = desc.with_arena(arena).unwrap() {
                 list[0][0].write(7);
             }
         }
@@ -83,7 +90,7 @@ mod tests {
         println!("{:?}", arena);
 
         {
-            let (_, lit) = Enumm::build(arena);
+            let (_, lit) = Enumm::build(arena).unwrap();
             assert_eq!(
                 7,
                 match lit {
@@ -126,7 +133,7 @@ mod tests {
                     List::with_capacity(2),
                 ]);
 
-                let mut owned = desc.with_arena(arena);
+                let mut owned = desc.with_arena(arena).unwrap();
 
                 owned[0][0].write(-10);
                 owned[0][1].write(-11);
@@ -135,7 +142,7 @@ mod tests {
             }
 
             {
-                let (_, owned): (_, List<List<Literal<i8>>>) = List::build(arena);
+                let (_, owned): (_, List<List<Literal<i8>>>) = List::build(arena).unwrap();
                 assert_eq!(owned[0][0].read(), -10);
                 assert_eq!(owned[0][1].read(), -11);
                 assert_eq!(owned[1][0].read(), -12);

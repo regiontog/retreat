@@ -18,7 +18,7 @@ impl<'a, S> Record<'a, S> {
 }
 
 impl<'a, S> WithArena<'a, S> for Record<'a, S> {
-    fn with_arena(self, arena: &'a mut [u8]) -> S {
-        self.create_struct.call(arena)
+    fn with_arena(self, arena: &'a mut [u8]) -> ::Result<'a, S> {
+        Ok(self.create_struct.call(arena))
     }
 }

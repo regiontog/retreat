@@ -14,7 +14,7 @@ pub struct List<T> {
 
 pub struct ListFactory<'a, T> {
     size: usize,
-    items_factory: BoxFnOnce<'a, (&'a mut [u8],), Vec<T>>,
+    items_factory: BoxFnOnce<'a, (&'a mut [u8],), Result<Vec<T>, ::NoserError<'a>>>,
 }
 
 use std::fmt::Debug;
@@ -44,10 +44,10 @@ impl<'a, T> DynamicSize for ListFactory<'a, T> {
 
 impl<'a, R> WithArena<'a, List<R>> for ListFactory<'a, R> {
     #[inline]
-    fn with_arena(self, arena: &'a mut [u8]) -> List<R> {
-        List {
-            items: self.items_factory.call(arena),
-        }
+    fn with_arena(self, arena: &'a mut [u8]) -> ::Result<'a, List<R>> {
+        Ok(List {
+            items: self.items_factory.call(arena)?,
+        })
     }
 }
 
@@ -92,20 +92,20 @@ impl<'a, T: StaticSize + Build<'a>> List<T> {
                 let cell = Cell::new(right);
 
                 for _ in 0..(len / size as ListLen) {
-                    let (right, item) = T::build(cell.take());
+                    let (right, item) = T::build(cell.take())?;
 
                     items.push(item);
                     cell.set(right);
                 }
 
-                items
+                Ok(items)
             }),
         }
     }
 }
 
 impl<'a, T: Debug + Build<'a>> Build<'a> for List<T> {
-    fn build(arena: &'a mut [u8]) -> (&'a mut [u8], List<T>) {
+    fn build(arena: &'a mut [u8]) -> ::Result<'a, (&'a mut [u8], Self)> {
         let (left, right) = arena.split_at_mut(ListLen::size());
         let len = ListLen::read(left);
 
@@ -113,12 +113,12 @@ impl<'a, T: Debug + Build<'a>> Build<'a> for List<T> {
         let mut items = Vec::with_capacity(len as usize);
 
         for _ in 0..len {
-            let (right, item) = T::build(cell.take());
+            let (right, item) = T::build(cell.take())?;
 
             cell.set(right);
             items.push(item)
         }
 
-        (cell.into_inner(), List { items: items })
+        Ok((cell.into_inner(), List { items: items }))
     }
 }

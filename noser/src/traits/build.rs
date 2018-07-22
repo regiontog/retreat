@@ -1,3 +1,3 @@
-pub trait Build<'a> {
-    fn build(&'a mut [u8]) -> (&'a mut [u8], Self);
+pub trait Build<'a>: Sized {
+    fn build(&'a mut [u8]) -> ::Result<'a, (&'a mut [u8], Self)>;
 }

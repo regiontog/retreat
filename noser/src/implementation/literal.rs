@@ -31,24 +31,24 @@ impl<'a, T: StaticSize> StaticSize for Literal<'a, T> {
 
 impl<'a, T: StaticSize> Build<'a> for Literal<'a, T> {
     #[inline]
-    fn build(arena: &'a mut [u8]) -> (&'a mut [u8], Self) {
+    fn build(arena: &'a mut [u8]) -> ::Result<'a, (&'a mut [u8], Self)> {
         let (left, right) = arena.split_at_mut(T::size());
 
-        (
+        Ok((
             right,
             Literal {
                 arena: left,
                 phantom: PhantomData,
             },
-        )
+        ))
     }
 }
 
 impl<'a, T: StaticSize + Write> WithArena<'a, Literal<'a, T>> for T {
     #[inline]
-    fn with_arena(self, arena: &'a mut [u8]) -> Literal<'a, T> {
-        let (_, mut lit) = Literal::build(arena);
+    fn with_arena(self, arena: &'a mut [u8]) -> ::Result<'a, Literal<'a, T>> {
+        let (_, mut lit) = Literal::build(arena)?;
         lit.write(self);
-        lit
+        Ok(lit)
     }
 }

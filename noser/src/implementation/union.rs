@@ -25,7 +25,7 @@ pub fn read_var_len_int(buffer: &[u8], len: usize) -> u64 {
 
 impl<'a, V: Variants<'a>> Build<'a> for V {
     #[inline]
-    fn build(arena: &'a mut [u8]) -> (&'a mut [u8], Self) {
+    fn build(arena: &'a mut [u8]) -> ::Result<'a, (&'a mut [u8], Self)> {
         let variant_bytes = Self::bytes_for_n_variants();
         let (left, right) = arena.split_at_mut(variant_bytes);
 
@@ -35,19 +35,22 @@ impl<'a, V: Variants<'a>> Build<'a> for V {
 
 pub struct Union<'a, E: Variants<'a>> {
     size: usize,
-    val: BoxFnOnce<'a, (&'a mut [u8],), E>,
+    val: BoxFnOnce<'a, (&'a mut [u8],), ::Result<'a, E>>,
 }
 
 impl<'a, E: Variants<'a>> Union<'a, E> {
     #[inline]
-    pub fn new<F: 'a + FnOnce(&'a mut [u8]) -> E>(size: usize, val: F) -> ::Union<'a, E> {
+    pub fn new<F: 'a + FnOnce(&'a mut [u8]) -> ::Result<'a, E>>(
+        size: usize,
+        val: F,
+    ) -> ::Union<'a, E> {
         ::Union {
             size: size,
             val: BoxFnOnce::new(|arena: &'a mut [u8]| {
                 let (left, right) = arena.split_at_mut(E::bytes_for_n_variants());
-                let variant = val(right);
+                let variant = val(right)?;
                 write_var_len_int(left, E::bytes_for_n_variants(), variant.ord());
-                variant
+                Ok(variant)
             }),
         }
     }
@@ -60,7 +63,7 @@ impl<'a, E: Variants<'a>> Union<'a, E> {
 
 impl<'a, E: Variants<'a>> WithArena<'a, E> for Union<'a, E> {
     #[inline]
-    fn with_arena(self, arena: &'a mut [u8]) -> E {
+    fn with_arena(self, arena: &'a mut [u8]) -> ::Result<'a, E> {
         self.val.call(arena)
     }
 }
