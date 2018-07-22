@@ -1,0 +1,16 @@
+[package]
+name = "noserc-test"
+version = "0.0.0"
+authors = ["Erlend Tobiassen <erlentob@stud.ntnu.no>"]
+
+build = "build.rs"
+
+[lib]
+name = "noserc_test"
+path = "test.rs"
+
+[dependencies]
+noser = { path = "../../noser" }
+
+[build-dependencies]
+noserc = { path = ".." }

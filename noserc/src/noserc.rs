@@ -187,25 +187,3 @@ impl<I> From<std::env::VarError> for NoserError<I> {
         NoserError::EnvironmentVariableError(error)
     }
 }
-
-#[cfg(test)]
-mod test {
-    extern crate noser;
-    use test::noser::traits::Build;
-    use *;
-
-    #[test]
-    fn test() {
-        NoserCompiler::new()
-            .out_dir("test_out")
-            .remove_prefix("src/schema")
-            .noser_path("::test::noser")
-            .file("src/schema/test.noser")
-            .run()
-            .expect("noserc failed to compile");
-    }
-
-    mod test_out {
-        include!("../test_out/test.rs");
-    }
-}

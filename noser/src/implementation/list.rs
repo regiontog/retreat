@@ -112,7 +112,7 @@ impl<'a, T: Debug + Build<'a>> Build<'a> for List<T> {
         let cell = Cell::new(right);
         let mut items = Vec::with_capacity(len as usize);
 
-        for i in 0..len {
+        for _ in 0..len {
             let (right, item) = T::build(cell.take());
 
             cell.set(right);
