@@ -1,7 +1,13 @@
 pub trait DynamicSize {
-    fn size(&self) -> usize;
+    fn dsize(&self) -> usize;
 }
 
 pub trait StaticSize {
     fn size() -> usize;
+}
+
+impl<T: StaticSize> DynamicSize for T {
+    fn dsize(&self) -> usize {
+        Self::size()
+    }
 }

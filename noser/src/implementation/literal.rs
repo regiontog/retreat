@@ -1,4 +1,4 @@
-use traits::{Build, Read, StaticSize, Write};
+use traits::{Build, Read, StaticSize, WithArena, Write};
 
 use std::marker::PhantomData;
 
@@ -41,5 +41,14 @@ impl<'a, T: StaticSize> Build<'a> for Literal<'a, T> {
                 phantom: PhantomData,
             },
         )
+    }
+}
+
+impl<'a, T: StaticSize + Write> WithArena<'a, Literal<'a, T>> for T {
+    #[inline]
+    fn with_arena(self, arena: &'a mut [u8]) -> Literal<'a, T> {
+        let (_, mut lit) = Literal::build(arena);
+        lit.write(self);
+        lit
     }
 }

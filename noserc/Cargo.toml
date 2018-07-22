@@ -10,3 +10,6 @@ path = "src/noserc.rs"
 [dependencies]
 nom = "4.0.0"
 codegen = { git = "https://github.com/carllerche/codegen" }
+
+[dev-dependencies]
+noser = {path = "../noser", version = "0.1.0"}

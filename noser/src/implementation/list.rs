@@ -37,7 +37,7 @@ impl<T> IndexMut<ListLen> for List<T> {
 
 impl<'a, T> DynamicSize for ListFactory<'a, T> {
     #[inline]
-    fn size(&self) -> usize {
+    fn dsize(&self) -> usize {
         self.size
     }
 }
@@ -51,10 +51,10 @@ impl<'a, R> WithArena<'a, List<R>> for ListFactory<'a, R> {
     }
 }
 
-impl<'a, R> ListFactory<'a, R> {
-    pub fn with<A: 'a + DynamicSize + WithArena<'a, R>>(items: Vec<A>) -> ListFactory<'a, R> {
+impl<T> List<T> {
+    pub fn with<'a, A: 'a + DynamicSize + WithArena<'a, T>>(items: Vec<A>) -> ListFactory<'a, T> {
         ListFactory {
-            size: ListLen::size() + items.iter().map(|item| item.size()).sum::<usize>(),
+            size: ListLen::size() + items.iter().map(|item| item.dsize()).sum::<usize>(),
             items_factory: BoxFnOnce::from(move |arena: &'a mut [u8]| {
                 // First bytes of list is it's length
                 let (left, right) = arena.split_at_mut(ListLen::size() as usize);
@@ -65,7 +65,7 @@ impl<'a, R> ListFactory<'a, R> {
                 items
                     .into_iter()
                     .map(|item| {
-                        let (left, right) = cell.take().split_at_mut(item.size() as usize);
+                        let (left, right) = cell.take().split_at_mut(item.dsize() as usize);
 
                         cell.set(right);
                         item.with_arena(left)
@@ -76,8 +76,8 @@ impl<'a, R> ListFactory<'a, R> {
     }
 }
 
-impl<'a, T: StaticSize + Build<'a>> ListFactory<'a, T> {
-    pub fn with_capacity(len: ListLen) -> Self {
+impl<'a, T: StaticSize + Build<'a>> List<T> {
+    pub fn with_capacity(len: ListLen) -> ListFactory<'a, T> {
         let size = T::size();
 
         ListFactory {

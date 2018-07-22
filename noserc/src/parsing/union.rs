@@ -1,11 +1,11 @@
 use codegen;
 
-use ::parsing::datastructures;
-use ::parsing::common::{identifier, whitespace0, whitespace1, type_identifier};
+use parsing::common::{identifier, type_identifier, type_path, whitespace0, whitespace1};
+use parsing::datastructures;
 
 named!(union_subtype<&str,datastructures::Type>, delimited!(
     pair!(tag!("("), whitespace0),
-    type_identifier,
+    type_path,
     pair!(whitespace0, tag!(")"))
 ));
 
@@ -27,12 +27,11 @@ named!(pub union_type<&str,datastructures::ScopeMutater>, do_parse!(
     id: type_identifier >>
     whitespace0         >>
     fields: union_body  >>
-    (Box::new(move |scope| {
+    (Box::new(move |options, scope| {
         let enm = scope.new_enum(&id.name);
 
-        match &id.generic_over {
-            Some(t) => {enm.generic(&t.name_with_generics());},
-            None => (),
+        for t in &id.generic_over {
+            enm.generic(&t.name_with_generics());
         }
 
         for field in fields.iter() {
