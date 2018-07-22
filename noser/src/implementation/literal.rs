@@ -32,6 +32,10 @@ impl<'a, T: StaticSize> StaticSize for Literal<'a, T> {
 impl<'a, T: StaticSize> Build<'a> for Literal<'a, T> {
     #[inline]
     fn build(arena: &'a mut [u8]) -> ::Result<'a, (&'a mut [u8], Self)> {
+        if arena.len() < T::size() {
+            return Err(::NoserError::Undersized(T::size(), arena));
+        }
+
         let (left, right) = arena.split_at_mut(T::size());
 
         Ok((

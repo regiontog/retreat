@@ -11,11 +11,11 @@ pub mod union {
 }
 
 #[derive(Debug)]
-enum NoserError<'a> {
-    Undersized(u64, &'a mut [u8]),
+pub enum NoserError<'a> {
+    Undersized(usize, &'a mut [u8]),
 }
 
-type Result<'a, T> = ::std::result::Result<T, NoserError<'a>>;
+pub type Result<'a, T> = ::std::result::Result<T, NoserError<'a>>;
 
 use traits::Build;
 
@@ -61,7 +61,7 @@ where
 
 impl<'a> From<Enumm<'a>> for ::Union<'a, Enumm<'a>> {
     fn from(variant: Enumm<'a>) -> Self {
-        ::Union::new(0, |arena| Ok(variant))
+        ::Union::new(0, |_| Ok(variant))
     }
 }
 
@@ -72,10 +72,10 @@ mod tests {
 
     use traits::{Build, WithArena, Write};
     use *;
-    use {List, ListFactory, Literal};
+    use {List, Literal};
 
-    #[bench]
-    fn bench_union(b: &mut Bencher) {
+    #[test]
+    fn bench_union() {
         let ref mut arena = [0; 20];
 
         {

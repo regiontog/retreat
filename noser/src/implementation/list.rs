@@ -52,10 +52,21 @@ impl<'a, R> WithArena<'a, List<R>> for ListFactory<'a, R> {
 }
 
 impl<T> List<T> {
+    #[inline]
+    pub fn len(&self) -> u32 {
+        self.items.len() as u32
+    }
+
+    #[inline]
     pub fn with<'a, A: 'a + DynamicSize + WithArena<'a, T>>(items: Vec<A>) -> ListFactory<'a, T> {
+        let size = ListLen::size() + items.iter().map(|item| item.dsize()).sum::<usize>();
         ListFactory {
-            size: ListLen::size() + items.iter().map(|item| item.dsize()).sum::<usize>(),
+            size: size,
             items_factory: BoxFnOnce::from(move |arena: &'a mut [u8]| {
+                if arena.len() < size {
+                    return Err(::NoserError::Undersized(size, arena));
+                }
+
                 // First bytes of list is it's length
                 let (left, right) = arena.split_at_mut(ListLen::size() as usize);
                 ListLen::write(left, items.len() as ListLen);
@@ -77,12 +88,17 @@ impl<T> List<T> {
 }
 
 impl<'a, T: StaticSize + Build<'a>> List<T> {
+    #[inline]
     pub fn with_capacity(len: ListLen) -> ListFactory<'a, T> {
         let size = T::size();
 
         ListFactory {
             size: ListLen::size() + len as usize * size,
             items_factory: BoxFnOnce::from(move |arena: &'a mut [u8]| {
+                if arena.len() < size {
+                    return Err(::NoserError::Undersized(size, arena));
+                }
+
                 // First bytes of list is it's length
                 let (left, right) = arena.split_at_mut(ListLen::size() as usize);
                 ListLen::write(left, len);
@@ -105,9 +121,18 @@ impl<'a, T: StaticSize + Build<'a>> List<T> {
 }
 
 impl<'a, T: Debug + Build<'a>> Build<'a> for List<T> {
+    #[inline]
     fn build(arena: &'a mut [u8]) -> ::Result<'a, (&'a mut [u8], Self)> {
+        if arena.len() < ListLen::size() {
+            return Err(::NoserError::Undersized(ListLen::size(), arena));
+        }
+
         let (left, right) = arena.split_at_mut(ListLen::size());
         let len = ListLen::read(left);
+
+        if right.len() < len as usize {
+            return Err(::NoserError::Undersized(len as usize, right));
+        }
 
         let cell = Cell::new(right);
         let mut items = Vec::with_capacity(len as usize);

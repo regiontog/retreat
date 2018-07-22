@@ -1,5 +1,3 @@
-use Union;
-
 pub trait Variants<'a>: Sized {
     fn variants() -> u64;
     fn ord(&self) -> u64;

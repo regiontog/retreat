@@ -20,3 +20,67 @@ members = ["."]
 [[bin]]
 name = "literal"
 path = "fuzz_targets/literal.rs"
+
+[[bin]]
+name = "list"
+path = "fuzz_targets/list.rs"
+
+[[bin]]
+name = "nested_list"
+path = "fuzz_targets/nested_list.rs"
+
+[[bin]]
+name = "u8"
+path = "fuzz_targets/u8.rs"
+
+[[bin]]
+name = "u16"
+path = "fuzz_targets/u16.rs"
+
+[[bin]]
+name = "char"
+path = "fuzz_targets/char.rs"
+
+[[bin]]
+name = "bool"
+path = "fuzz_targets/bool.rs"
+
+[[bin]]
+name = "u32"
+path = "fuzz_targets/u32.rs"
+
+[[bin]]
+name = "u64"
+path = "fuzz_targets/u64.rs"
+
+[[bin]]
+name = "u128"
+path = "fuzz_targets/u128.rs"
+
+[[bin]]
+name = "i8"
+path = "fuzz_targets/i8.rs"
+
+[[bin]]
+name = "i16"
+path = "fuzz_targets/i16.rs"
+
+[[bin]]
+name = "i32"
+path = "fuzz_targets/i32.rs"
+
+[[bin]]
+name = "i64"
+path = "fuzz_targets/i64.rs"
+
+[[bin]]
+name = "i128"
+path = "fuzz_targets/i128.rs"
+
+[[bin]]
+name = "f32"
+path = "fuzz_targets/f32.rs"
+
+[[bin]]
+name = "f64"
+path = "fuzz_targets/f64.rs"
