@@ -58,31 +58,25 @@ named!(pub struct_type<&str,datastructures::ScopeMutater>, do_parse!(
         for (i, field) in fields.iter().enumerate() {
             with_fields.bound(
                 format!("F{}", i).as_str(),
-                format!("'arena + {0}::traits::DynamicSize + {0}::traits::WithArena<'arena, {1}>", options.noser_path, field.kind.name_with_generics())
+                format!("'arena + {0}::traits::WithArena<'arena, {1}>", options.noser_path, field.kind.name_with_generics())
             );
         }
 
-        with_fields.line("let mut size = 0;");
-
-        for field in &fields {
-            with_fields.line(format!("size += {}.dsize();", field.name.as_str()));
-        }
-
-        with_fields.line(format!("{}::Record::new(size, |arena: &'arena mut [u8]| {{", options.noser_path));
+        with_fields.line(format!("{}::Record::new(|arena: &'arena mut [u8]| {{", options.noser_path));
 
         for field in &fields {
             with_fields.line(format!(
-                "    let ({0}_a, arena) = arena.split_at_mut({0}.dsize());",
+                "    let (arena, {0}_a) = {0}.with_arena(arena)?;",
                 field.name.as_str()
             ));
         }
 
-        with_fields.line(format!("    {} {{", id.name));
+        with_fields.line(format!("    Ok((arena, {} {{", id.name));
         for field in &fields {
-            with_fields.line(format!("            {0}: {0}.with_arena({0}_a),", field.name));
+            with_fields.line(format!("        {0}: {0}_a,", field.name));
         }
 
-        with_fields.line("    }");
+        with_fields.line("    }))");
         with_fields.line("})");
 
         build.generic("'arena");
@@ -98,18 +92,18 @@ named!(pub struct_type<&str,datastructures::ScopeMutater>, do_parse!(
         build.impl_trait(build_trait);
 
         build_fn.arg("arena", "&'arena mut [u8]");
-        build_fn.ret("(&'arena mut [u8], Self)");
+        build_fn.ret(format!("{}::Result<'arena, (&'arena mut [u8], Self)>", options.noser_path));
 
         for field in &fields {
-            build_fn.line(format!("let (arena, {}) = {}::build(arena);", field.name, field.kind.name));
+            build_fn.line(format!("let (arena, {}) = {}::build(arena)?;", field.name, field.kind.name));
         }
 
-        build_fn.line(format!("(arena, {} {{", &id.name));
+        build_fn.line(format!("Ok((arena, {} {{", &id.name));
         for field in &fields {
             build_fn.line(format!("    {}: {},", field.name, field.name));
         }
 
-        build_fn.line("})");
+        build_fn.line("}))");
 
         impel.push_fn(with_fields);
         build.push_fn(build_fn);

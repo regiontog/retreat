@@ -50,18 +50,35 @@ impl<'a> ::traits::Variants<'a> for Enumm<'a> {
 
 impl<'a, T: 'a> From<T> for ::Union<'a, Enumm<'a>>
 where
-    T: ::traits::WithArena<'a, List<List<Literal<'a, u8>>>> + ::traits::DynamicSize,
+    T: ::traits::WithArena<'a, List<List<Literal<'a, u8>>>>,
 {
     fn from(dynamic_type: T) -> Self {
-        ::Union::new(dynamic_type.dsize(), |arena| {
-            Ok(Enumm::Some(dynamic_type.with_arena(arena)?))
+        ::Union::new(|arena| {
+            let (right, inner) = dynamic_type.with_arena(arena)?;
+            Ok((right, Enumm::Some(inner)))
         })
     }
 }
 
 impl<'a> From<Enumm<'a>> for ::Union<'a, Enumm<'a>> {
     fn from(variant: Enumm<'a>) -> Self {
-        ::Union::new(0, |_| Ok(variant))
+        ::Union::new(|arena| Ok((arena, variant)))
+    }
+}
+
+mod ext {
+    pub trait SliceExt {
+        fn noser_split(&mut self, at: usize) -> ::Result<(&mut Self, &mut Self)>;
+    }
+
+    impl SliceExt for [u8] {
+        fn noser_split(&mut self, at: usize) -> ::Result<(&mut [u8], &mut [u8])> {
+            if self.len() < at {
+                return Err(::NoserError::Undersized(at, self));
+            }
+
+            Ok(self.split_at_mut(at))
+        }
     }
 }
 
@@ -82,7 +99,7 @@ mod tests {
             let desc = Union::with_variant(List::with(vec![List::<Literal<u8>>::with_capacity(2)]));
             // let desc = Union::with_variant(Enumm::None);
 
-            if let Enumm::Some(mut list) = desc.with_arena(arena).unwrap() {
+            if let Ok((_, Enumm::Some(mut list))) = desc.with_arena(arena) {
                 list[0][0].write(7);
             }
         }
@@ -133,7 +150,7 @@ mod tests {
                     List::with_capacity(2),
                 ]);
 
-                let mut owned = desc.with_arena(arena).unwrap();
+                let (_, mut owned) = desc.with_arena(arena).unwrap();
 
                 owned[0][0].write(-10);
                 owned[0][1].write(-11);

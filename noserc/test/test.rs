@@ -2,7 +2,7 @@ extern crate noser;
 
 use noser::{List, Literal};
 
-include!(concat!(env!("OUT_DIR"), "/generated_source.rs"));
+include!("test_out/generated_source.rs");
 
 #[cfg(test)]
 mod tests {
@@ -15,7 +15,7 @@ mod tests {
 
         {
             let desc = TestStruct::with_fields(10, noser::List::with_capacity(5));
-            let mut st = desc.with_arena(arena);
+            let (_, mut st) = desc.with_arena(arena).unwrap();
 
             st.field_y[0].write(1);
             st.field_y[1].write(2);
@@ -25,7 +25,7 @@ mod tests {
         println!("{:?}", arena);
 
         {
-            let (_, st) = TestStruct::build(arena);
+            let (_, st) = TestStruct::build(arena).unwrap();
             assert_eq!(10, st.field_x.read());
             assert_eq!(1, st.field_y[0].read());
             assert_eq!(2, st.field_y[1].read());

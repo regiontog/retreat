@@ -1,5 +1,5 @@
 use boxfnonce::BoxFnOnce;
-use traits::{Build, DynamicSize, Variants, WithArena};
+use traits::{Build, Variants, WithArena};
 
 #[inline]
 pub fn write_var_len_int(buffer: &mut [u8], len: usize, int: u64) {
@@ -34,23 +34,20 @@ impl<'a, V: Variants<'a>> Build<'a> for V {
 }
 
 pub struct Union<'a, E: Variants<'a>> {
-    size: usize,
-    val: BoxFnOnce<'a, (&'a mut [u8],), ::Result<'a, E>>,
+    val: BoxFnOnce<'a, (&'a mut [u8],), ::Result<'a, (&'a mut [u8], E)>>,
 }
 
 impl<'a, E: Variants<'a>> Union<'a, E> {
     #[inline]
-    pub fn new<F: 'a + FnOnce(&'a mut [u8]) -> ::Result<'a, E>>(
-        size: usize,
+    pub fn new<F: 'a + FnOnce(&'a mut [u8]) -> ::Result<'a, (&'a mut [u8], E)>>(
         val: F,
     ) -> ::Union<'a, E> {
         ::Union {
-            size: size,
             val: BoxFnOnce::new(|arena: &'a mut [u8]| {
                 let (left, right) = arena.split_at_mut(E::bytes_for_n_variants());
-                let variant = val(right)?;
+                let (right, variant) = val(right)?;
                 write_var_len_int(left, E::bytes_for_n_variants(), variant.ord());
-                Ok(variant)
+                Ok((right, variant))
             }),
         }
     }
@@ -63,14 +60,7 @@ impl<'a, E: Variants<'a>> Union<'a, E> {
 
 impl<'a, E: Variants<'a>> WithArena<'a, E> for Union<'a, E> {
     #[inline]
-    fn with_arena(self, arena: &'a mut [u8]) -> ::Result<'a, E> {
+    fn with_arena(self, arena: &'a mut [u8]) -> ::Result<'a, (&'a mut [u8], E)> {
         self.val.call(arena)
-    }
-}
-
-impl<'a, E: Variants<'a>> DynamicSize for Union<'a, E> {
-    #[inline]
-    fn dsize(&self) -> usize {
-        E::bytes_for_n_variants() + self.size
     }
 }
