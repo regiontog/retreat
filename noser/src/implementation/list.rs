@@ -30,7 +30,7 @@ impl<'a, T> CovariantList<'a, T> {
         T: Build<'b> + Find,
     {
         T::create(self.item_slice(arena, idx))
-            .expect("List should have verified the length of the buffer on initialization.")
+            .expect("List should have verified the integrity of the buffer on List::build(...)")
     }
 
     #[inline]
@@ -136,11 +136,11 @@ impl<'a, T: Find + Build<'a>> Build<'a> for List<'a, T> {
         // as we could panic if the lookup table recieved is invalid.
         // Also return Err if arena is undersized here insted of in get's.
 
-        let mut running_size = 0;
+        let mut running_size: Ptr = 0;
 
         for i in 0..capacity as usize {
             let size = T::read_size(&arena[running_size as usize..])?;
-            running_size += size;
+            running_size = running_size.checked_add(size).ok_or(::NoserError::IntegerOverflow)?;
 
             T::write_lookup_ptr(lookup_table, i, running_size);
         }

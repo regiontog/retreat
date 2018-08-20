@@ -30,6 +30,7 @@ pub use implementation::*;
 #[derive(Debug)]
 pub enum NoserError {
     Undersized(usize, Vec<u8>),
+    IntegerOverflow,
 }
 
 fn nth<T: traits::StaticSize>(idx: usize) -> ::std::ops::Range<usize> {
@@ -90,16 +91,14 @@ mod tests {
 
     #[test]
     fn fuzzer_crash() {
-        let ref mut arena = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        if let Ok(list) = List::<List<Literal<char>>>::create(arena) {
+        if let Ok(list) = List::<List<Literal<char>>>::create(&mut [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) {
             list.borrow(0, |_| {});
         }
     }
 
     #[test]
     fn fuzzer_crash2() {
-        let ref mut arena = [0x01, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00];
-        if let Ok(list) = List::<List<Literal<char>>>::create(arena) {
+        if let Ok(list) = List::<List<Literal<char>>>::create(&mut [0x01, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]) {
             list.borrow(0, |_| {});
         }
     }
