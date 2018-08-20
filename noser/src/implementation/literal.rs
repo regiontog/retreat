@@ -1,5 +1,5 @@
 use ext::SliceExt;
-use traits::{Build, Read, StaticSize, WithArena, Write};
+use traits::{find::Find, Build, Imprinter, Read, StaticSize, Write};
 
 use std::marker::PhantomData;
 
@@ -23,9 +23,20 @@ impl<'a, T: Write> Literal<'a, T> {
     }
 }
 
+impl<'a, T: Find> Find for Literal<'a, T> {
+    type Strategy = T::Strategy;
+}
+
+impl<'a, T: StaticSize> StaticSize for Literal<'a, T> {
+    #[inline]
+    fn size() -> ::Ptr {
+        T::size()
+    }
+}
+
 impl<'a, T: StaticSize> Build<'a> for Literal<'a, T> {
     #[inline]
-    fn build(arena: &'a mut [u8]) -> ::Result<'a, (&'a mut [u8], Self)> {
+    fn build(arena: &'a mut [u8]) -> ::Result<(&'a mut [u8], Self)> {
         let (left, right) = arena.noser_split(T::size())?;
 
         Ok((
@@ -38,11 +49,10 @@ impl<'a, T: StaticSize> Build<'a> for Literal<'a, T> {
     }
 }
 
-impl<'a, T: StaticSize + Write> WithArena<'a, Literal<'a, T>> for T {
+impl<'a, T: StaticSize> Imprinter<'a> for T {
     #[inline]
-    fn with_arena(self, arena: &'a mut [u8]) -> ::Result<'a, (&'a mut [u8], Literal<'a, T>)> {
-        let (right, mut lit) = Literal::build(arena)?;
-        lit.write(self);
-        Ok((right, lit))
+    fn imprint(self, arena: &'a mut [u8]) -> ::Result<()> {
+        arena.noser_split(Self::size())?;
+        Ok(())
     }
 }

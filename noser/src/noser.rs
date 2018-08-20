@@ -1,83 +1,71 @@
-#![feature(test)]
+#![feature(test, never_type)]
 extern crate boxfnonce;
 
-mod implementation;
+// We cannot have a method &mut self -> T on List as &mut Self is invariant on Self.
+// As such T's lifetime cannot be narrowed. We also cannot have a method
+// &self -> &mut [u8] -> T on List as rust cannot borrow &self and &mut self.buffer
+// simultaneously even though they are disjoint. Therefore we need a field builder,
+// we can then use a macro that disjointly borrows &self.builder and &mut self.buffer.
+// Use mem::transmute to shorten invariant lifetime?
+#[macro_export]
+macro_rules! get {
+    ($this:expr, $idx:expr, $cb:expr) => {{
+        // To get lint hints about self's mutability
+        let ref mut this = $this;
 
+        // To avoid manually typing the callback's input type
+        let cb = this.coerce($cb);
+
+        cb(this.inner.get(this.arena, $idx));
+    }};
+}
+
+pub type Ptr = u32;
+
+mod implementation;
 pub mod traits;
+
 pub use implementation::*;
 
-pub mod union {
-    pub use implementation::union::{read_var_len_int, write_var_len_int};
-}
-
 #[derive(Debug)]
-pub enum NoserError<'a> {
-    Undersized(usize, &'a mut [u8]),
+pub enum NoserError {
+    Undersized(usize, Vec<u8>),
 }
 
-pub type Result<'a, T> = ::std::result::Result<T, NoserError<'a>>;
-
-use traits::Build;
-
-enum Enumm<'a> {
-    None,
-    Some(List<List<Literal<'a, u8>>>),
+fn nth<T: traits::StaticSize>(idx: usize) -> ::std::ops::Range<usize> {
+    let start = idx * T::size() as usize;
+    (start..(start + T::size() as usize))
 }
 
-impl<'a> ::traits::Variants<'a> for Enumm<'a> {
-    fn variants() -> u64 {
-        2
-    }
-
-    fn ord(&self) -> u64 {
-        match self {
-            Enumm::None => 0,
-            Enumm::Some(_) => 1,
-        }
-    }
-
-    fn variant(var: u64, arena: &'a mut [u8]) -> Result<'a, (&'a mut [u8], Self)> {
-        match var {
-            0 => Ok((arena, Enumm::None)),
-            1 => {
-                let (right, inner) = List::build(arena)?;
-                Ok((right, Enumm::Some(inner)))
-            }
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl<'a, T: 'a> From<T> for ::Union<'a, Enumm<'a>>
-where
-    T: ::traits::WithArena<'a, List<List<Literal<'a, u8>>>>,
-{
-    fn from(dynamic_type: T) -> Self {
-        ::Union::new(|arena| {
-            let (right, inner) = dynamic_type.with_arena(arena)?;
-            Ok((right, Enumm::Some(inner)))
-        })
-    }
-}
-
-impl<'a> From<Enumm<'a>> for ::Union<'a, Enumm<'a>> {
-    fn from(variant: Enumm<'a>) -> Self {
-        ::Union::new(|arena| Ok((arena, variant)))
-    }
-}
+pub type Result<T> = ::std::result::Result<T, NoserError>;
 
 mod ext {
     pub trait SliceExt {
-        fn noser_split(&mut self, at: usize) -> ::Result<(&mut Self, &mut Self)>;
+        fn noser_split(&mut self, at: ::Ptr) -> ::Result<(&mut Self, &mut Self)>;
+        fn validate_size(&mut self, at: ::Ptr) -> ::Result<()>;
     }
 
     impl SliceExt for [u8] {
-        fn noser_split(&mut self, at: usize) -> ::Result<(&mut [u8], &mut [u8])> {
+        #[inline]
+        fn noser_split(&mut self, at: ::Ptr) -> ::Result<(&mut [u8], &mut [u8])> {
+            let at = at as usize;
+
             if self.len() < at {
-                return Err(::NoserError::Undersized(at, self));
+                return Err(::NoserError::Undersized(at, self.to_vec()));
             }
 
             Ok(self.split_at_mut(at))
+        }
+
+        #[inline]
+        fn validate_size(&mut self, at: ::Ptr) -> ::Result<()> {
+            let at = at as usize;
+
+            if self.len() < at {
+                return Err(::NoserError::Undersized(at, self.to_vec()));
+            }
+
+            Ok(())
         }
     }
 }
@@ -85,38 +73,11 @@ mod ext {
 #[cfg(test)]
 mod tests {
     extern crate test;
+
     use self::test::Bencher;
 
-    use traits::{Build, WithArena, Write};
-    use *;
+    use traits::{Build, DynamicSize, Imprinter, Write};
     use {List, Literal};
-
-    #[test]
-    fn bench_union() {
-        let ref mut arena = [0; 20];
-
-        {
-            let desc = Union::with_variant(List::with(vec![List::<Literal<u8>>::with_capacity(2)]));
-            // let desc = Union::with_variant(Enumm::None);
-
-            if let Ok((_, Enumm::Some(mut list))) = desc.with_arena(arena) {
-                list[0][0].write(7);
-            }
-        }
-
-        println!("{:?}", arena);
-
-        {
-            let (_, lit) = Enumm::build(arena).unwrap();
-            assert_eq!(
-                7,
-                match lit {
-                    Enumm::None => 2,
-                    Enumm::Some(list) => list[0][0].read(),
-                },
-            );
-        }
-    }
 
     #[bench]
     fn bench_u8(b: &mut Bencher) {
@@ -140,31 +101,164 @@ mod tests {
     }
 
     #[bench]
-    fn bench_nested_list(b: &mut Bencher) {
-        let ref mut arena = [0; 28];
+    fn bench_list(b: &mut Bencher) {
+        let mut arena = List::<Literal<u8>>::with_capacity(10)
+            .create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
 
         b.iter(|| {
             {
-                let desc = List::with(vec![
-                    List::<Literal<i8>>::with_capacity(2),
-                    List::with_capacity(2),
-                ]);
+                let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
 
-                let (_, mut owned) = desc.with_arena(arena).unwrap();
+                get!(owned, 0, |mut item| {
+                    item.write(10);
+                });
 
-                owned[0][0].write(-10);
-                owned[0][1].write(-11);
-                owned[1][0].write(-12);
-                owned[1][1].write(13);
+                get!(owned, 9, |mut item| {
+                    item.write(11);
+                });
             }
 
             {
-                let (_, owned): (_, List<List<Literal<i8>>>) = List::build(arena).unwrap();
-                assert_eq!(owned[0][0].read(), -10);
-                assert_eq!(owned[0][1].read(), -11);
-                assert_eq!(owned[1][0].read(), -12);
-                assert_eq!(owned[1][1].read(), 13);
+                let owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
+
+                owned.borrow(0, |item| {
+                    assert_eq!(item.read(), 10);
+                });
+
+                owned.borrow(9, |item| {
+                    assert_eq!(item.read(), 11);
+                });
             }
         });
+    }
+
+    #[bench]
+    fn bench_nested_list(b: &mut Bencher) {
+        let mut arena = List::from(vec![
+            List::<Literal<u8>>::with_capacity(2),
+            List::<Literal<u8>>::with_capacity(2),
+        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        b.iter(|| {
+            {
+                let mut owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
+
+                get!(owned, 0, |mut sublist| {
+                    get!(sublist, 0, |mut item| {
+                        item.write(10);
+                    });
+
+                    get!(sublist, 1, |mut item| {
+                        item.write(11);
+                    });
+                });
+
+                get!(owned, 1, |mut sublist| {
+                    get!(sublist, 0, |mut item| {
+                        item.write(12);
+                    });
+
+                    get!(sublist, 1, |mut item| {
+                        item.write(13);
+                    });
+                });
+            }
+
+            {
+                let owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
+
+                owned.borrow(0, |sublist| {
+                    sublist.borrow(0, |item| {
+                        assert_eq!(item.read(), 10);
+                    });
+
+                    sublist.borrow(1, |item| {
+                        assert_eq!(item.read(), 11);
+                    });
+                });
+
+                owned.borrow(1, |sublist| {
+                    sublist.borrow(0, |item| {
+                        assert_eq!(item.read(), 12);
+                    });
+
+                    sublist.borrow(1, |item| {
+                        assert_eq!(item.read(), 13);
+                    });
+                });
+            }
+        });
+    }
+
+    #[test]
+    fn undersized_arena() {
+        let mut arena = List::from(vec![
+            List::<Literal<u8>>::with_capacity(2),
+            List::<Literal<u8>>::with_capacity(2),
+        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        let undersized = &mut arena[..23];
+
+        let mut results = vec![];
+        results.push(
+            List::from(vec![
+                List::<Literal<u8>>::with_capacity(2),
+                List::<Literal<u8>>::with_capacity(2),
+            ]).imprint(undersized),
+        );
+
+        results.push(List::<List<Literal<u8>>>::create(undersized).map(|_| ()));
+
+        eprintln!("{:?}", results);
+        assert!(results.into_iter().all(|r| r.is_err()));
+    }
+
+    #[test]
+    #[should_panic]
+    fn out_of_bounds_list() {
+        let mut arena = List::from(vec![
+            List::<Literal<u8>>::with_capacity(2),
+            List::<Literal<u8>>::with_capacity(2),
+        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        let owned = List::<List<Literal<u8>>>::create(&mut arena).unwrap();
+        owned.borrow(2, |_| {});
+    }
+
+    #[test]
+    fn in_bounds_list() {
+        let mut arena = List::from(vec![
+            List::<Literal<u8>>::with_capacity(2),
+            List::<Literal<u8>>::with_capacity(2),
+        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        let owned = List::<List<Literal<u8>>>::create(&mut arena).unwrap();
+        owned.borrow(1, |_| {});
+    }
+
+    #[test]
+    #[should_panic]
+    fn out_of_bounds_list2() {
+        let mut arena = List::<Literal<u8>>::with_capacity(50)
+            .create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        let owned = List::<Literal<u8>>::create(&mut arena).unwrap();
+        owned.borrow(50, |_| {});
+    }
+
+    #[test]
+    fn in_bounds_list2() {
+        let mut arena = List::<Literal<u8>>::with_capacity(50)
+            .create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        let owned = List::<Literal<u8>>::create(&mut arena).unwrap();
+        owned.borrow(49, |_| {});
     }
 }

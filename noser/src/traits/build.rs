@@ -1,3 +1,11 @@
 pub trait Build<'a>: Sized {
-    fn build(&'a mut [u8]) -> ::Result<'a, (&'a mut [u8], Self)>;
+    // TODO: Associated type for arena (AsRef, AsMut)
+    fn build(&'a mut [u8]) -> Result<'a, Self>;
+
+    #[inline]
+    fn create(arena: &'a mut [u8]) -> ::Result<Self> {
+        Self::build(arena).map(|(_, this)| this)
+    }
 }
+
+pub type Result<'a, T> = ::Result<(&'a mut [u8], T)>;

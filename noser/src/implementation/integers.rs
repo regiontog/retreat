@@ -1,6 +1,8 @@
 use std::mem;
 
-use traits::{Read, StaticSize, Write};
+use traits::{
+    find::{Find, StaticFind}, Read, StaticSize, Write,
+};
 
 impl Write for u8 {
     #[inline]
@@ -18,9 +20,13 @@ impl Read for u8 {
 
 impl StaticSize for u8 {
     #[inline]
-    fn size() -> usize {
-        mem::size_of::<u8>()
+    fn size() -> ::Ptr {
+        mem::size_of::<u8>() as ::Ptr
     }
+}
+
+impl Find for u8 {
+    type Strategy = StaticFind<u8>;
 }
 
 macro_rules! transmutable {
@@ -41,9 +47,13 @@ macro_rules! transmutable {
 
         impl StaticSize for $Int {
             #[inline]
-            fn size() -> usize {
-                mem::size_of::<$Int>()
+            fn size() -> ::Ptr {
+                mem::size_of::<$Int>() as ::Ptr
             }
+        }
+
+        impl Find for $Int {
+            type Strategy = StaticFind<u8>;
         }
     };
 
@@ -64,9 +74,13 @@ macro_rules! transmutable {
 
         impl StaticSize for $Int {
             #[inline]
-            fn size() -> usize {
-                mem::size_of::<$Int>()
+            fn size() -> ::Ptr {
+                mem::size_of::<$Int>() as ::Ptr
             }
+        }
+
+        impl Find for $Int {
+            type Strategy = StaticFind<$Int>;
         }
     };
 }
