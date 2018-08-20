@@ -11,12 +11,14 @@ fuzz_target!(|data: &[u8]| {
     let data = v.as_mut_slice();
 
     if let Ok(list) = List::<List<Literal<char>>>::create(data) {
-        for i in 0..list.len() {
+        for i in 0..list.capacity() {
             list.borrow(i, |sublist| {
-                for j in 0..sublist.len() {
-                    sublist.borrow(j, |item| item.read());
-                });
-            }
+                for j in 0..sublist.capacity() {
+                    sublist.borrow(j, |item| {
+                        item.read();
+                    });
+                }
+            });
         }
     }
 });
