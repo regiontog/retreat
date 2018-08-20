@@ -88,24 +88,30 @@ impl<'a, T> List<'a, T> {
     }
 
     #[inline]
-    pub fn from(item_types: Vec<T>) -> DynamicItemListImprinter<T>
+    pub fn from(item_types: &[T]) -> DynamicItemListImprinter<T>
     where
         T: DynamicSize,
     {
         DynamicItemListImprinter {
+            list_imprinter: ListImprinter {
+                capacity: item_types.len() as ListLen,
+                phantom: PhantomData,
+            },
             items_sum_size: item_types.iter().map(|item| item.dsize()).sum(),
             item_types: item_types,
         }
     }
 
     #[inline]
-    pub fn with_capacity(capacity: ListLen) -> StaticItemListImprinter
+    pub fn with_capacity(capacity: ListLen) -> StaticItemListImprinter<T>
     where
         T: StaticSize,
     {
         StaticItemListImprinter {
-            item_size: T::size(),
-            capacity: capacity,
+            list_imprinter: ListImprinter {
+                capacity: capacity,
+                phantom: PhantomData,
+            }
         }
     }
 }
@@ -142,82 +148,103 @@ impl<'a, T: Find> Build<'a> for List<'a, T> {
     }
 }
 
-pub struct DynamicItemListImprinter<T: DynamicSize> {
-    item_types: Vec<T>,
+pub struct DynamicItemListImprinter<'a, A: 'a + DynamicSize> {
+    list_imprinter: ListImprinter<A>,
+    item_types: &'a [A],
     items_sum_size: Ptr,
 }
 
-pub struct StaticItemListImprinter {
-    capacity: ListLen,
-    item_size: Ptr,
+pub struct StaticItemListImprinter<A: StaticSize> {
+    list_imprinter: ListImprinter<A>,
 }
 
-impl<'a, A: DynamicSize + Imprinter<'a>> Imprinter<'a> for DynamicItemListImprinter<A> {
-    #[inline]
-    fn imprint(self, arena: &'a mut [u8]) -> ::Result<()> {
-        let cap = self.item_types.len() as ListLen;
+struct ListImprinter<A> {
+    capacity: ListLen,
+    phantom: PhantomData<A>,
+}
 
+impl<'a, A: Find> Imprinter<'a> for ListImprinter<A> {
+    type OnSuccess = (&'a mut [u8], &'a mut [u8]);
+
+    #[inline]
+    fn imprint(&self, arena: &'a mut [u8]) -> ::Result<Self::OnSuccess> {
         // First write the capacity of the list
         let (left, right) = arena.noser_split(LIST_LEN_SIZE)?;
-        ListLen::write(left, cap);
+        ListLen::write(left, self.capacity);
 
-        // Then the lookup table
-        let lookup_table_size = cap * LIST_LEN_SIZE;
-        let (lookup_table, right) = right.noser_split(lookup_table_size)?;
+        // Then return the lookup table and arena for further initialization.
+        Ok(A::get_lookup_table(right, self.capacity)?)
+    }
+}
+
+impl<'a, A> Imprinter<'a> for StaticItemListImprinter<A> where A: StaticSize + Find {
+    type OnSuccess = ::std::slice::ChunksMut<'a, u8>;
+
+    #[inline]
+    fn imprint(&self, arena: &'a mut [u8]) -> ::Result<Self::OnSuccess> {
+        let capacity = self.list_imprinter.capacity;
+
+        // Static item list don't need to initialize the lookup table
+        let (_, right) = self.list_imprinter.imprint(arena)?;
+
+        // Ensure the arena is large enough
+        let (arena, _) = right.noser_split(capacity * A::size())?;
+
+        // TODO: Use exact_chunks_mut when stable #47115
+        Ok(arena.chunks_mut(A::size() as usize))
+    }
+}
+
+impl<'a, 'b, A: DynamicSize + Find + Imprinter<'a>> Imprinter<'a> for DynamicItemListImprinter<'b, A> {
+    type OnSuccess = ();
+
+    #[inline]
+    fn imprint(&self, arena: &'a mut [u8]) -> ::Result<Self::OnSuccess> {
+        let (lookup_table, right) = self.list_imprinter.imprint(arena)?;
 
         let mut running_size = 0;
-        let mut ptr = 0;
+
+        // Fill the lookup table
+        for (kind, chunk) in self.item_types.iter().zip(lookup_table.chunks_mut(Ptr::size() as usize)) {
+            running_size += kind.dsize();
+            Ptr::write(chunk, running_size);
+        }
 
         let cell = Cell::new(right);
-        for kind in self.item_types {
-            // TODO: Cleanup
-            // Write a Ptr to each T in the lookup table
-            let size = kind.dsize();
-            running_size += size;
-            Ptr::write(&mut lookup_table[(ptr as usize)..], running_size);
-            ptr += LTP_SIZE;
 
-            // Run nested imprinters
-            let (left, right) = cell.take().noser_split(size)?;
+        // Call nested imprinters
+        for kind in self.item_types {
+            let (left, right) = cell.take().noser_split(kind.dsize())?;
             kind.imprint(left)?;
             cell.set(right);
         }
 
+        // Ok(self.item_types().map())
         Ok(())
     }
 }
 
-impl<'a> Imprinter<'a> for StaticItemListImprinter {
-    #[inline]
-    fn imprint(self, arena: &'a mut [u8]) -> ::Result<()> {
-        // First bytes of list is it's length
-        let (left, right) = arena.noser_split(LIST_LEN_SIZE as Ptr)?;
-        ListLen::write(left, self.capacity);
 
-        for chunk in right
-            .chunks_mut(self.item_size as usize)
-            .take(self.capacity as usize)
-        {
-            // TODO: nested imprints
-        }
-
-        right.validate_size(self.item_size as Ptr * self.capacity)?;
-        Ok(())
-    }
-}
-
-impl<A: DynamicSize> DynamicSize for DynamicItemListImprinter<A> {
+impl<'a, A: DynamicSize> DynamicSize for DynamicItemListImprinter<'a, A> {
     #[inline]
     fn dsize(&self) -> Ptr {
         // items_size + lookup table + len
-        self.items_sum_size + self.item_types.len() as Ptr * LTP_SIZE + LIST_LEN_SIZE
+        self.items_sum_size + self.list_imprinter.capacity as Ptr * LTP_SIZE + LIST_LEN_SIZE
     }
 }
 
-impl DynamicSize for StaticItemListImprinter {
+impl<'a, A: DynamicSize> Find for DynamicItemListImprinter<'a, A> {
+    type Strategy = DynamicFind;
+}
+
+impl<A: StaticSize> DynamicSize for StaticItemListImprinter<A> {
     #[inline]
     fn dsize(&self) -> Ptr {
         // arena + capacity
-        self.capacity * self.item_size + LIST_LEN_SIZE
+        self.list_imprinter.capacity * A::size() + LIST_LEN_SIZE
     }
+}
+
+impl<A: StaticSize> Find for StaticItemListImprinter<A> {
+    type Strategy = DynamicFind;
 }

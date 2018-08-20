@@ -18,16 +18,16 @@ pub trait StaticSize {
 pub trait DynamicSize {
     fn dsize(&self) -> ::Ptr;
 
-    fn create_buffer<T, E>(
+    fn create_buffer<E>(
         self,
-        cb: impl Fn(Self, &mut Vec<u8>) -> Result<T, E>,
+        cb: impl Fn(Self, &mut Vec<u8>) -> Result<(), E>,
     ) -> Result<Vec<u8>, E>
     where
         Self: Sized,
     {
         let mut buffer = vec![0; self.dsize() as usize];
 
-        cb(self, &mut buffer)?;
+        cb(self, &mut buffer).map(|_| ())?;
         Ok(buffer)
     }
 }

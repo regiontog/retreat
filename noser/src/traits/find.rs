@@ -15,7 +15,7 @@ pub struct DynamicFind;
 
 pub trait Strategy {
     fn find(&[u8], ListLen) -> Ptr;
-    fn get_lookup_table(&mut [u8], ListLen) -> ::Result<(&[u8], &mut [u8])>;
+    fn get_lookup_table(&mut [u8], ListLen) -> ::Result<(&mut [u8], &mut [u8])>;
 }
 
 pub trait Find {
@@ -27,7 +27,7 @@ pub trait Find {
     }
 
     #[inline]
-    fn get_lookup_table(arena: &mut [u8], capacity: ListLen) -> ::Result<(&[u8], &mut [u8])> {
+    fn get_lookup_table(arena: &mut [u8], capacity: ListLen) -> ::Result<(&mut [u8], &mut [u8])> {
         Self::Strategy::get_lookup_table(arena, capacity)
     }
 }
@@ -39,8 +39,8 @@ impl<T: StaticSize> Strategy for StaticFind<T> {
     }
 
     #[inline]
-    fn get_lookup_table(arena: &mut [u8], _capacity: ListLen) -> ::Result<(&[u8], &mut [u8])> {
-        Ok((&[], arena))
+    fn get_lookup_table(arena: &mut [u8], _capacity: ListLen) -> ::Result<(&mut [u8], &mut [u8])> {
+        Ok((&mut [], arena))
     }
 }
 
@@ -55,7 +55,7 @@ impl Strategy for DynamicFind {
     }
 
     #[inline]
-    fn get_lookup_table(arena: &mut [u8], capacity: ListLen) -> ::Result<(&[u8], &mut [u8])> {
+    fn get_lookup_table(arena: &mut [u8], capacity: ListLen) -> ::Result<(&mut [u8], &mut [u8])> {
         let (lookup_table, right) = arena.noser_split(capacity * LTP_SIZE)?;
 
         Ok((lookup_table, right))

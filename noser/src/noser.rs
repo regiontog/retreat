@@ -1,4 +1,4 @@
-#![feature(test, never_type)]
+#![feature(test, never_type, associated_type_defaults)]
 extern crate boxfnonce;
 
 // We cannot have a method &mut self -> T on List as &mut Self is invariant on Self.
@@ -42,7 +42,6 @@ pub type Result<T> = ::std::result::Result<T, NoserError>;
 mod ext {
     pub trait SliceExt {
         fn noser_split(&mut self, at: ::Ptr) -> ::Result<(&mut Self, &mut Self)>;
-        fn validate_size(&mut self, at: ::Ptr) -> ::Result<()>;
     }
 
     impl SliceExt for [u8] {
@@ -55,17 +54,6 @@ mod ext {
             }
 
             Ok(self.split_at_mut(at))
-        }
-
-        #[inline]
-        fn validate_size(&mut self, at: ::Ptr) -> ::Result<()> {
-            let at = at as usize;
-
-            if self.len() < at {
-                return Err(::NoserError::Undersized(at, self.to_vec()));
-            }
-
-            Ok(())
         }
     }
 }
@@ -103,13 +91,12 @@ mod tests {
     #[bench]
     fn bench_list(b: &mut Bencher) {
         let mut arena = List::<Literal<u8>>::with_capacity(10)
-            .create_buffer(|kind, buffer| kind.imprint(buffer))
+            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
             .unwrap();
 
+        let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
         b.iter(|| {
             {
-                let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
-
                 get!(owned, 0, |mut item| {
                     item.write(10);
                 });
@@ -120,8 +107,6 @@ mod tests {
             }
 
             {
-                let owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
-
                 owned.borrow(0, |item| {
                     assert_eq!(item.read(), 10);
                 });
@@ -135,7 +120,7 @@ mod tests {
 
     #[bench]
     fn bench_nested_list(b: &mut Bencher) {
-        let mut arena = List::from(vec![
+        let mut arena = List::from(&[
             List::<Literal<u8>>::with_capacity(2),
             List::<Literal<u8>>::with_capacity(2),
         ]).create_buffer(|kind, buffer| kind.imprint(buffer))
@@ -194,7 +179,7 @@ mod tests {
 
     #[test]
     fn undersized_arena() {
-        let mut arena = List::from(vec![
+        let mut arena = List::from(&[
             List::<Literal<u8>>::with_capacity(2),
             List::<Literal<u8>>::with_capacity(2),
         ]).create_buffer(|kind, buffer| kind.imprint(buffer))
@@ -204,7 +189,7 @@ mod tests {
 
         let mut results = vec![];
         results.push(
-            List::from(vec![
+            List::from(&[
                 List::<Literal<u8>>::with_capacity(2),
                 List::<Literal<u8>>::with_capacity(2),
             ]).imprint(undersized),
@@ -219,7 +204,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn out_of_bounds_list() {
-        let mut arena = List::from(vec![
+        let mut arena = List::from(&[
             List::<Literal<u8>>::with_capacity(2),
             List::<Literal<u8>>::with_capacity(2),
         ]).create_buffer(|kind, buffer| kind.imprint(buffer))
@@ -231,7 +216,7 @@ mod tests {
 
     #[test]
     fn in_bounds_list() {
-        let mut arena = List::from(vec![
+        let mut arena = List::from(&[
             List::<Literal<u8>>::with_capacity(2),
             List::<Literal<u8>>::with_capacity(2),
         ]).create_buffer(|kind, buffer| kind.imprint(buffer))
@@ -245,7 +230,7 @@ mod tests {
     #[should_panic]
     fn out_of_bounds_list2() {
         let mut arena = List::<Literal<u8>>::with_capacity(50)
-            .create_buffer(|kind, buffer| kind.imprint(buffer))
+            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
             .unwrap();
 
         let owned = List::<Literal<u8>>::create(&mut arena).unwrap();
@@ -255,7 +240,7 @@ mod tests {
     #[test]
     fn in_bounds_list2() {
         let mut arena = List::<Literal<u8>>::with_capacity(50)
-            .create_buffer(|kind, buffer| kind.imprint(buffer))
+            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
             .unwrap();
 
         let owned = List::<Literal<u8>>::create(&mut arena).unwrap();

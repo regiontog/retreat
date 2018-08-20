@@ -50,8 +50,10 @@ impl<'a, T: StaticSize> Build<'a> for Literal<'a, T> {
 }
 
 impl<'a, T: StaticSize> Imprinter<'a> for T {
+    type OnSuccess = ();
+
     #[inline]
-    fn imprint(self, arena: &'a mut [u8]) -> ::Result<()> {
+    fn imprint(&self, arena: &'a mut [u8]) -> ::Result<()> {
         arena.noser_split(Self::size())?;
         Ok(())
     }
