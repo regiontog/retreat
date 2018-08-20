@@ -88,6 +88,15 @@ mod tests {
         b.iter(|| u64::write(arena, 23459982413412));
     }
 
+    #[test]
+    fn fuzzer_crash() {
+        let ref mut arena = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+        if let Ok(list) = List::<List<Literal<char>>>::create(arena) {
+            list.borrow(0, |_| {});
+        }
+    }
+
     #[bench]
     fn bench_list(b: &mut Bencher) {
         let mut arena = List::<Literal<u8>>::with_capacity(10)
