@@ -120,7 +120,7 @@ impl<'a, T> Find for List<'a, T> {
     type Strategy = DynamicFind;
 }
 
-impl<'a, T: Find> Build<'a> for List<'a, T> {
+impl<'a, T: Find + Build<'a>> Build<'a> for List<'a, T> {
     #[inline]
     fn build(arena: &'a mut [u8]) -> ::Result<(&mut [u8], Self)> {
         // First bytes of list is it's length
@@ -131,8 +131,21 @@ impl<'a, T: Find> Build<'a> for List<'a, T> {
         let (lookup_table, arena) = T::get_lookup_table(right, capacity)?;
 
         // The rest is the arena of this list
-        let size = T::find(lookup_table, capacity);
-        let (arena, right) = arena.noser_split(size)?;
+
+        // Figure out the length of each element andd write it to the lookup table,
+        // as we could panic if the lookup table recieved is invalid.
+        // Also return Err if arena is undersized here insted of in get's.
+
+        let mut running_size = 0;
+
+        for i in 0..capacity as usize {
+            let size = T::read_size(&arena[running_size as usize..])?;
+            running_size += size;
+
+            T::write_lookup_ptr(lookup_table, i, running_size);
+        }
+
+        let (arena, right) = arena.noser_split(running_size)?;
 
         Ok((
             right,

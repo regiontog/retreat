@@ -1,4 +1,4 @@
-#![feature(test, never_type, associated_type_defaults)]
+#![feature(test, never_type, cell_update)]
 extern crate boxfnonce;
 
 // We cannot have a method &mut self -> T on List as &mut Self is invariant on Self.
