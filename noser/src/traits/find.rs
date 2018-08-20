@@ -41,7 +41,7 @@ pub trait Find {
 impl<T: StaticSize> Strategy for StaticFind<T> {
     #[inline]
     fn find(_lookup_table: &[u8], idx: ListLen) -> Ptr {
-        // VERIFT: no overflow
+        // VERIFY: no overflow
         T::size() as ListLen * idx
     }
 
@@ -51,7 +51,7 @@ impl<T: StaticSize> Strategy for StaticFind<T> {
     }
 
     #[inline]
-    fn write_lookup_ptr(_lookup_table: &mut [u8], _i: usize, _ptr: Ptr) { }
+    fn write_lookup_ptr(_lookup_table: &mut [u8], _i: usize, _ptr: Ptr) {}
 }
 
 impl Strategy for DynamicFind {
@@ -66,7 +66,11 @@ impl Strategy for DynamicFind {
 
     #[inline]
     fn get_lookup_table(arena: &mut [u8], capacity: ListLen) -> ::Result<(&mut [u8], &mut [u8])> {
-        let (lookup_table, right) = arena.noser_split(capacity.checked_mul(LTP_SIZE).ok_or(::NoserError::IntegerOverflow)?)?;
+        let (lookup_table, right) = arena.noser_split(
+            capacity
+                .checked_mul(LTP_SIZE)
+                .ok_or(::NoserError::IntegerOverflow)?,
+        )?;
 
         Ok((lookup_table, right))
     }

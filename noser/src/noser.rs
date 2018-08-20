@@ -91,14 +91,18 @@ mod tests {
 
     #[test]
     fn fuzzer_crash() {
-        if let Ok(list) = List::<List<Literal<char>>>::create(&mut [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]) {
+        if let Ok(list) = List::<List<Literal<char>>>::create(&mut [
+            0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]) {
             list.borrow(0, |_| {});
         }
     }
 
     #[test]
     fn fuzzer_crash2() {
-        if let Ok(list) = List::<List<Literal<char>>>::create(&mut [0x01, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00]) {
+        if let Ok(list) = List::<List<Literal<char>>>::create(&mut [
+            0x01, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ]) {
             list.borrow(0, |_| {});
         }
     }
@@ -111,25 +115,21 @@ mod tests {
 
         let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
         b.iter(|| {
-            {
-                get!(owned, 0, |mut item| {
-                    item.write(10);
-                });
+            get!(owned, 0, |mut item| {
+                item.write(10);
+            });
 
-                get!(owned, 9, |mut item| {
-                    item.write(11);
-                });
-            }
+            get!(owned, 9, |mut item| {
+                item.write(11);
+            });
 
-            {
-                owned.borrow(0, |item| {
-                    assert_eq!(item.read(), 10);
-                });
+            owned.borrow(0, |item| {
+                assert_eq!(item.read(), 10);
+            });
 
-                owned.borrow(9, |item| {
-                    assert_eq!(item.read(), 11);
-                });
-            }
+            owned.borrow(9, |item| {
+                assert_eq!(item.read(), 11);
+            });
         });
     }
 
@@ -141,54 +141,48 @@ mod tests {
         ]).create_buffer(|kind, buffer| kind.imprint(buffer))
             .unwrap();
 
+        let mut owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
+
         b.iter(|| {
-            {
-                let mut owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
-
-                get!(owned, 0, |mut sublist| {
-                    get!(sublist, 0, |mut item| {
-                        item.write(10);
-                    });
-
-                    get!(sublist, 1, |mut item| {
-                        item.write(11);
-                    });
+            get!(owned, 0, |mut sublist| {
+                get!(sublist, 0, |mut item| {
+                    item.write(10);
                 });
 
-                get!(owned, 1, |mut sublist| {
-                    get!(sublist, 0, |mut item| {
-                        item.write(12);
-                    });
-
-                    get!(sublist, 1, |mut item| {
-                        item.write(13);
-                    });
+                get!(sublist, 1, |mut item| {
+                    item.write(11);
                 });
-            }
+            });
 
-            {
-                let owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
-
-                owned.borrow(0, |sublist| {
-                    sublist.borrow(0, |item| {
-                        assert_eq!(item.read(), 10);
-                    });
-
-                    sublist.borrow(1, |item| {
-                        assert_eq!(item.read(), 11);
-                    });
+            get!(owned, 1, |mut sublist| {
+                get!(sublist, 0, |mut item| {
+                    item.write(12);
                 });
 
-                owned.borrow(1, |sublist| {
-                    sublist.borrow(0, |item| {
-                        assert_eq!(item.read(), 12);
-                    });
-
-                    sublist.borrow(1, |item| {
-                        assert_eq!(item.read(), 13);
-                    });
+                get!(sublist, 1, |mut item| {
+                    item.write(13);
                 });
-            }
+            });
+
+            owned.borrow(0, |sublist| {
+                sublist.borrow(0, |item| {
+                    assert_eq!(item.read(), 10);
+                });
+
+                sublist.borrow(1, |item| {
+                    assert_eq!(item.read(), 11);
+                });
+            });
+
+            owned.borrow(1, |sublist| {
+                sublist.borrow(0, |item| {
+                    assert_eq!(item.read(), 12);
+                });
+
+                sublist.borrow(1, |item| {
+                    assert_eq!(item.read(), 13);
+                });
+            });
         });
     }
 

@@ -111,7 +111,7 @@ impl<'a, T> List<'a, T> {
             list_imprinter: ListImprinter {
                 capacity: capacity,
                 phantom: PhantomData,
-            }
+            },
         }
     }
 }
@@ -132,15 +132,17 @@ impl<'a, T: Find + Build<'a>> Build<'a> for List<'a, T> {
 
         // The rest is the arena of this list
 
-        // Figure out the length of each element andd write it to the lookup table,
-        // as we could panic if the lookup table recieved is invalid.
-        // Also return Err if arena is undersized here insted of in get's.
+        // Figure out the length of each element and write it to the lookup table,
+        // as we could panic if the lookup table received is invalid.
+        // Also return Err if arena is undersized here instead of in get's.
 
         let mut running_size: Ptr = 0;
 
         for i in 0..capacity as usize {
             let size = T::read_size(&arena[running_size as usize..])?;
-            running_size = running_size.checked_add(size).ok_or(::NoserError::IntegerOverflow)?;
+            running_size = running_size
+                .checked_add(size)
+                .ok_or(::NoserError::IntegerOverflow)?;
 
             T::write_lookup_ptr(lookup_table, i, running_size);
         }
@@ -190,7 +192,10 @@ impl<'a, A: Find> Imprinter<'a> for ListImprinter<A> {
     }
 }
 
-impl<'a, A> Imprinter<'a> for StaticItemListImprinter<A> where A: StaticSize + Find {
+impl<'a, A> Imprinter<'a> for StaticItemListImprinter<A>
+where
+    A: StaticSize + Find,
+{
     type OnSuccess = ::std::slice::ChunksMut<'a, u8>;
 
     #[inline]
@@ -208,7 +213,9 @@ impl<'a, A> Imprinter<'a> for StaticItemListImprinter<A> where A: StaticSize + F
     }
 }
 
-impl<'a, 'b, A: DynamicSize + Find + Imprinter<'a>> Imprinter<'a> for DynamicItemListImprinter<'b, A> {
+impl<'a, 'b, A: DynamicSize + Find + Imprinter<'a>> Imprinter<'a>
+    for DynamicItemListImprinter<'b, A>
+{
     type OnSuccess = ();
 
     #[inline]
@@ -218,7 +225,11 @@ impl<'a, 'b, A: DynamicSize + Find + Imprinter<'a>> Imprinter<'a> for DynamicIte
         let mut running_size = 0;
 
         // Fill the lookup table
-        for (kind, chunk) in self.item_types.iter().zip(lookup_table.chunks_mut(Ptr::size() as usize)) {
+        for (kind, chunk) in self
+            .item_types
+            .iter()
+            .zip(lookup_table.chunks_mut(Ptr::size() as usize))
+        {
             running_size += kind.dsize();
             Ptr::write(chunk, running_size);
         }
@@ -236,7 +247,6 @@ impl<'a, 'b, A: DynamicSize + Find + Imprinter<'a>> Imprinter<'a> for DynamicIte
         Ok(())
     }
 }
-
 
 impl<'a, A: DynamicSize> DynamicSize for DynamicItemListImprinter<'a, A> {
     #[inline]
