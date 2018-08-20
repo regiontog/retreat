@@ -91,7 +91,14 @@ mod tests {
     #[test]
     fn fuzzer_crash() {
         let ref mut arena = [0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        if let Ok(list) = List::<List<Literal<char>>>::create(arena) {
+            list.borrow(0, |_| {});
+        }
+    }
 
+    #[test]
+    fn fuzzer_crash2() {
+        let ref mut arena = [0x01, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00];
         if let Ok(list) = List::<List<Literal<char>>>::create(arena) {
             list.borrow(0, |_| {});
         }
