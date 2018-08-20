@@ -10,10 +10,9 @@ fuzz_target!(|data: &[u8]| {
     let mut v = data.to_vec();
     let data = v.as_mut_slice();
 
-    if let Ok((_, list)) = List::<Literal<u8>>::build(data) {
+    if let Ok(list) = List::<Literal<u8>>::create(data) {
         for i in 0..list.len() {
-            list[i].read();
+            list.borrow(i, |item| item.read());
         }
     }
 });
-

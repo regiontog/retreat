@@ -10,7 +10,7 @@ fuzz_target!(|data: &[u8]| {
     let mut v = data.to_vec();
     let data = v.as_mut_slice();
 
-    if let Ok((_, lit)) = Literal::<u128>::build(data) {
+    if let Ok(lit) = Literal::<u128>::create(data) {
         lit.read();
     }
 });
