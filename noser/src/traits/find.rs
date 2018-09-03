@@ -8,7 +8,7 @@ use std::marker::PhantomData;
 pub const LTP_SIZE: Ptr = ::std::mem::size_of::<Ptr>() as Ptr;
 
 pub struct StaticFind<T> {
-    p: PhantomData<T>,
+    phantom: PhantomData<T>,
 }
 
 pub struct DynamicFind;

@@ -1,3 +1,5 @@
 pub trait Read {
-    fn read(&[u8]) -> Self;
+    type Output;
+
+    fn read(&[u8]) -> Self::Output;
 }

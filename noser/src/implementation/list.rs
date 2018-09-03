@@ -271,3 +271,138 @@ impl<A: StaticSize> DynamicSize for StaticItemListImprinter<A> {
 impl<A: StaticSize> Find for StaticItemListImprinter<A> {
     type Strategy = DynamicFind;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use Literal;
+
+    #[test]
+    fn list() {
+        let mut arena = List::<Literal<u8>>::with_capacity(10)
+            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
+            .unwrap();
+
+        let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
+        get!(owned, 0, |mut item| {
+            item.write(10);
+        });
+
+        get!(owned, 9, |mut item| {
+            item.write(11);
+        });
+
+        owned.borrow(0, |item| {
+            assert_eq!(item.read(), 10);
+        });
+
+        owned.borrow(9, |item| {
+            assert_eq!(item.read(), 11);
+        });
+    }
+
+    #[test]
+    fn nested_list() {
+        let mut arena = List::from(&[
+            List::<Literal<u8>>::with_capacity(2),
+            List::<Literal<u8>>::with_capacity(2),
+        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        let mut owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
+
+        get!(owned, 0, |mut sublist| {
+            get!(sublist, 0, |mut item| {
+                item.write(10);
+            });
+        });
+
+        get!(owned, 1, |mut sublist| {
+            get!(sublist, 0, |mut item| {
+                item.write(12);
+            });
+        });
+
+        owned.borrow(0, |sublist| {
+            sublist.borrow(0, |item| {
+                assert_eq!(item.read(), 10);
+            });
+        });
+
+        owned.borrow(1, |sublist| {
+            sublist.borrow(0, |item| {
+                assert_eq!(item.read(), 12);
+            });
+        });
+    }
+
+    #[test]
+    fn undersized_arena() {
+        let mut arena = List::from(&[
+            List::<Literal<u8>>::with_capacity(2),
+            List::<Literal<u8>>::with_capacity(2),
+        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        let undersized = &mut arena[..23];
+
+        let mut results = vec![];
+        results.push(
+            List::from(&[
+                List::<Literal<u8>>::with_capacity(2),
+                List::<Literal<u8>>::with_capacity(2),
+            ]).imprint(undersized),
+        );
+
+        results.push(List::<List<Literal<u8>>>::create(undersized).map(|_| ()));
+
+        println!("{:?}", results);
+        assert!(results.into_iter().all(|r| r.is_err()));
+    }
+
+    #[test]
+    #[should_panic]
+    fn out_of_bounds_list() {
+        let mut arena = List::from(&[
+            List::<Literal<u8>>::with_capacity(2),
+            List::<Literal<u8>>::with_capacity(2),
+        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        let owned = List::<List<Literal<u8>>>::create(&mut arena).unwrap();
+        owned.borrow(2, |_| {});
+    }
+
+    #[test]
+    fn in_bounds_list() {
+        let mut arena = List::from(&[
+            List::<Literal<u8>>::with_capacity(2),
+            List::<Literal<u8>>::with_capacity(2),
+        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
+            .unwrap();
+
+        let owned = List::<List<Literal<u8>>>::create(&mut arena).unwrap();
+        owned.borrow(1, |_| {});
+    }
+
+    #[test]
+    #[should_panic]
+    fn out_of_bounds_list2() {
+        let mut arena = List::<Literal<u8>>::with_capacity(50)
+            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
+            .unwrap();
+
+        let owned = List::<Literal<u8>>::create(&mut arena).unwrap();
+        owned.borrow(50, |_| {});
+    }
+
+    #[test]
+    fn in_bounds_list2() {
+        let mut arena = List::<Literal<u8>>::with_capacity(50)
+            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
+            .unwrap();
+
+        let owned = List::<Literal<u8>>::create(&mut arena).unwrap();
+        owned.borrow(49, |_| {});
+    }
+}

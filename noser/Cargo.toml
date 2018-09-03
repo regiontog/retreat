@@ -6,6 +6,3 @@ authors = ["Erlend Tobiassen <erlentob@stud.ntnu.no>"]
 [lib]
 name = "noser"
 path = "src/noser.rs"
-
-[dependencies]
-boxfnonce = "0.1.0"
