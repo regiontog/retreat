@@ -1,5 +1,5 @@
-pub trait Read {
+pub trait Read<'a> {
     type Output;
 
-    fn read(&[u8]) -> Self::Output;
+    fn read(&'a [u8]) -> Self::Output;
 }

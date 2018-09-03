@@ -3,7 +3,10 @@ pub trait Imprinter<'a> {
 
     fn imprint(&self, arena: &'a mut [u8]) -> ::Result<Self::OnSuccess>;
 
-    fn imprint_disregard_result(&self, arena: &'a mut [u8]) -> ::Result<()> where Self: Sized {
+    fn imprint_disregard_result(&self, arena: &'a mut [u8]) -> ::Result<()>
+    where
+        Self: Sized,
+    {
         self.imprint(arena).map(|_| ())
     }
 }

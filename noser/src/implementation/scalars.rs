@@ -33,7 +33,7 @@ macro_rules! transmutable_without_endianness_tansform {
                 }
             }
 
-            impl Read for $ty {
+            impl<'a> Read<'a> for $ty {
                 type Output = $ty;
 
                 #[inline]
@@ -57,7 +57,7 @@ macro_rules! transmutable {
                 }
             }
 
-            impl Read for $ty {
+            impl<'a> Read<'a> for $ty {
                 type Output = $ty;
 
                 #[inline]
@@ -78,7 +78,7 @@ impl_rw!(u8,
         }
     }
 
-    impl Read for u8 {
+    impl<'a> Read<'a> for u8 {
         type Output = u8;
 
         #[inline]
@@ -98,9 +98,9 @@ transmutable!(u32);
 transmutable!(i64);
 transmutable!(u64);
 #[cfg(feature = "i128")]
-transmutable!{i128}
+transmutable!(i128);
 #[cfg(feature = "u128")]
-transmutable!{u128}
+transmutable!(u128);
 
 impl_rw!(char,
     impl Write for char {
@@ -110,7 +110,7 @@ impl_rw!(char,
         }
     }
 
-    impl Read for char {
+    impl<'a> Read<'a> for char {
         type Output = Option<char>;
 
         #[inline]
@@ -128,7 +128,7 @@ impl_rw!(f32,
         }
     }
 
-    impl Read for f32 {
+    impl<'a> Read<'a> for f32 {
         type Output = f32;
 
         #[inline]
@@ -146,7 +146,7 @@ impl_rw!(f64,
         }
     }
 
-    impl Read for f64 {
+    impl<'a> Read<'a> for f64 {
         type Output = f64;
 
         #[inline]
@@ -207,15 +207,33 @@ mod tests {
     fn rw_f32() {
         let ref mut arena = [0; 10];
 
-        f32::write(arena, 3825345.);
-        assert!(3825345. == f32::read(arena));
+        f32::write(arena, ::std::f32::NAN);
+        assert!(f32::read(arena).is_nan());
+
+        f32::write(arena, ::std::f32::INFINITY);
+        assert!(::std::f32::INFINITY == f32::read(arena));
+
+        f32::write(arena, ::std::f32::NEG_INFINITY);
+        assert!(::std::f32::NEG_INFINITY == f32::read(arena));
+
+        f32::write(arena, 98452345.2384945);
+        assert!(98452345.2384945 == f32::read(arena));
     }
 
     #[test]
     fn rw_f64() {
         let ref mut arena = [0; 8];
 
-        f64::write(arena, 246.);
-        assert!(246. == f64::read(arena));
+        f64::write(arena, ::std::f64::NAN);
+        assert!(f64::read(arena).is_nan());
+
+        f64::write(arena, ::std::f64::INFINITY);
+        assert!(::std::f64::INFINITY == f64::read(arena));
+
+        f64::write(arena, ::std::f64::NEG_INFINITY);
+        assert!(::std::f64::NEG_INFINITY == f64::read(arena));
+
+        f64::write(arena, 98452345.2384945);
+        assert!(98452345.2384945 == f64::read(arena));
     }
 }

@@ -9,9 +9,9 @@ pub struct Literal<'a, T> {
     phantom: PhantomData<T>,
 }
 
-impl<'a, T: Read> Literal<'a, T> {
+impl<'a, T: Read<'a>> Literal<'a, T> {
     #[inline]
-    pub fn read(&self) -> T::Output {
+    pub fn read(&'a self) -> T::Output {
         T::read(self.arena)
     }
 }
@@ -54,6 +54,7 @@ impl<'a, T: StaticSize> Imprinter<'a> for T {
 
     #[inline]
     fn imprint(&self, arena: &'a mut [u8]) -> ::Result<()> {
+        // TODO: It's surprising that 10.imprint(arena) does not write 10 to the arena.
         arena.noser_split(Self::size())?;
         Ok(())
     }
@@ -71,8 +72,8 @@ mod tests {
             .unwrap();
 
         let mut owned: Literal<u8> = Literal::create(&mut arena).unwrap();
-
         owned.write(10);
+
         assert_eq!(owned.read(), 10);
     }
 
