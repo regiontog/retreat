@@ -20,6 +20,7 @@ macro_rules! get {
 }
 
 pub type Ptr = u32;
+pub const PTR_SIZE: Ptr = ::std::mem::size_of::<Ptr>() as Ptr;
 
 mod implementation;
 pub mod traits;
@@ -32,10 +33,10 @@ pub enum NoserError {
     IntegerOverflow,
 }
 
-fn nth<T: traits::StaticSize>(idx: usize) -> ::std::ops::Range<usize> {
-    let start = idx * T::size() as usize;
-    (start..(start + T::size() as usize))
-}
+// fn nth<T: traits::StaticSize>(idx: usize) -> ::std::ops::Range<usize> {
+//     let start = idx * T::size() as usize;
+//     (start..(start + T::size() as usize))
+// }
 
 pub type Result<T> = ::std::result::Result<T, NoserError>;
 

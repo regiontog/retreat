@@ -1,23 +1,19 @@
 use std::mem;
 
-use traits::{
-    find::{DynamicFind, Find},
-    DynamicSize, Read, Write,
-};
+use traits::{size::Dynamic, Read, Sizable, Write};
 
 macro_rules! impl_slice_rw {
     ($ty:ident, $($rw:tt)*) => {
         $($rw)*
 
-        impl<'a> DynamicSize for &'a [$ty] {
-            #[inline]
-            fn dsize(&self) -> ::Ptr {
-                (self.len() * mem::size_of::<$ty>()) as ::Ptr
-            }
-        }
+        impl<'a> Sizable for &'a [$ty] {
+            type Strategy = Dynamic;
 
-        impl<'a> Find for &'a [$ty] {
-            type Strategy = DynamicFind;
+            #[inline]
+            fn read_size(arena: &[u8]) -> ::Result<::Ptr> {
+                let len = ::Ptr::read_safe(arena)? as usize;
+                Ok((len * mem::size_of::<$ty>()) as ::Ptr)
+            }
         }
     };
 }
@@ -37,6 +33,7 @@ impl_slice_rw!(u8,
         type Output = Self;
 
         #[inline]
+        /// Unsafe if reported length is larger than bytes in arena.
         fn read(arena: &'a [u8]) -> Self {
             let len = ::Ptr::read(arena) as usize;
             &arena[mem::size_of::<::Ptr>()..len+mem::size_of::<::Ptr>()]
@@ -60,15 +57,13 @@ impl<'a> Read<'a> for &'a str {
     }
 }
 
-impl<'a> DynamicSize for &'a str {
-    #[inline]
-    fn dsize(&self) -> ::Ptr {
-        self.len() as ::Ptr
-    }
-}
+impl<'a> Sizable for &'a str {
+    type Strategy = Dynamic;
 
-impl<'a> Find for &'a str {
-    type Strategy = DynamicFind;
+    #[inline]
+    fn read_size(arena: &[u8]) -> ::Result<::Ptr> {
+        <&[u8]>::read_size(arena)
+    }
 }
 
 #[cfg(test)]

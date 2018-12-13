@@ -1,12 +1,14 @@
-pub trait Imprinter<'a> {
+pub trait Imprinter {
     type OnSuccess;
 
-    fn imprint(&self, arena: &'a mut [u8]) -> ::Result<Self::OnSuccess>;
+    fn imprint(&self, arena: &mut [u8]) -> ::Result<Self::OnSuccess>;
 
-    fn imprint_disregard_result(&self, arena: &'a mut [u8]) -> ::Result<()>
-    where
-        Self: Sized,
-    {
-        self.imprint(arena).map(|_| ())
+    fn result_size(&self) -> ::Ptr;
+
+    fn create_buffer(&self) -> ::Result<Vec<u8>> {
+        let mut buffer = vec![0; self.result_size() as usize];
+
+        self.imprint(&mut buffer)?;
+        Ok(buffer)
     }
 }

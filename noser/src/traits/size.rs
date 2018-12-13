@@ -1,33 +1,78 @@
-pub trait StaticSize {
-    fn size() -> ::Ptr;
+pub trait SizeStrategy {
+    type ErrorType: Into<::NoserError> + ::std::fmt::Debug;
 
-    fn create_buffer<T, E>(
-        self,
-        cb: impl Fn(Self, &mut Vec<u8>) -> Result<T, E>,
-    ) -> Result<Vec<u8>, E>
+    fn dynamic() -> bool;
+}
+
+pub enum SizeKind {
+    Dynamic,
+    Exactly(::Ptr),
+}
+
+pub trait Sizable {
+    type Strategy: SizeStrategy;
+
+    fn read_size(&[u8]) -> ReadReturn<Self>;
+
+    #[inline]
+    fn static_size() -> ::Ptr
     where
-        Self: Sized,
+        Self::Strategy: SizeStrategy<ErrorType = NoError>,
     {
-        let mut buffer = vec![0; Self::size() as usize];
+        Self::read_size(&[]).expect("Guaranteed to succeed since NoError has no variants.")
+    }
 
-        cb(self, &mut buffer)?;
-        Ok(buffer)
+    #[inline]
+    fn size() -> SizeKind {
+        if Self::Strategy::dynamic() {
+            SizeKind::Dynamic
+        } else {
+            SizeKind::Exactly(
+                Self::read_size(&[])
+                    .expect("Expect static strategies to never error on read size."),
+            )
+        }
+    }
+
+    #[inline]
+    fn in_bounds(arena: &[u8]) -> ::Result<::Ptr> {
+        let size = Self::read_size(arena).map_err(Into::into)?;
+
+        if arena.len() < size as usize {
+            return Err(::NoserError::Undersized(size as usize, arena.to_owned()));
+        }
+
+        Ok(size)
     }
 }
 
-pub trait DynamicSize {
-    fn dsize(&self) -> ::Ptr;
+#[derive(Debug)]
+pub enum NoError {}
 
-    fn create_buffer<E>(
-        self,
-        cb: impl Fn(Self, &mut Vec<u8>) -> Result<(), E>,
-    ) -> Result<Vec<u8>, E>
-    where
-        Self: Sized,
-    {
-        let mut buffer = vec![0; self.dsize() as usize];
+#[allow(type_alias_bounds)]
+pub type ReadReturn<T: Sizable> = Result<::Ptr, <T::Strategy as SizeStrategy>::ErrorType>;
 
-        cb(self, &mut buffer).map(|_| ())?;
-        Ok(buffer)
+impl Into<::NoserError> for NoError {
+    fn into(self) -> ::NoserError {
+        unreachable!()
+    }
+}
+
+pub struct Static;
+pub struct Dynamic;
+
+impl SizeStrategy for Static {
+    type ErrorType = NoError;
+
+    fn dynamic() -> bool {
+        false
+    }
+}
+
+impl SizeStrategy for Dynamic {
+    type ErrorType = ::NoserError;
+
+    fn dynamic() -> bool {
+        true
     }
 }

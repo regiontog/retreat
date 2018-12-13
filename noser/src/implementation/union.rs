@@ -30,4 +30,9 @@ impl<'a, V: Variants<'a>> Build<'a> for V {
 
         Self::variant(read_var_len_int(left, variant_bytes), right)
     }
+
+    #[inline]
+    unsafe fn unchecked_build(_arena: &'a mut [u8]) -> Self {
+        unimplemented!()
+    }
 }

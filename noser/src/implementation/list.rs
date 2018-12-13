@@ -1,6 +1,9 @@
 use ext::SliceExt;
-use traits::find::{DynamicFind, Find, LTP_SIZE};
-use traits::{Build, DynamicSize, Imprinter, Read, StaticSize, Write};
+// use traits::find::{DynamicFind, Find, LTP_SIZE};
+use traits::{
+    size::{Dynamic, SizeKind, Static},
+    Build, Imprinter, Read, Sizable, Write,
+};
 use Ptr;
 
 use std::borrow::Borrow;
@@ -11,36 +14,49 @@ pub type ListLen = u32;
 pub const LIST_LEN_SIZE: Ptr = ::std::mem::size_of::<ListLen>() as Ptr;
 
 #[derive(Debug)]
-pub struct CovariantList<'a, T> {
+pub struct CovariantList<T> {
     phantom: PhantomData<T>,
     capacity: ListLen,
-    lookup_table: &'a [u8],
 }
 
 #[derive(Debug)]
 pub struct List<'a, T> {
-    pub inner: CovariantList<'a, T>,
+    pub inner: CovariantList<T>,
     pub arena: &'a mut [u8],
 }
 
-impl<'a, T> CovariantList<'a, T> {
+impl<'a, T> CovariantList<T> {
     #[inline]
     pub fn get<'b>(&self, arena: &'b mut [u8], idx: ListLen) -> T
     where
-        T: Build<'b> + Find,
+        T: Sizable + Build<'b>,
     {
-        T::create(self.item_slice(arena, idx))
-            .expect("List should have verified the integrity of the buffer on List::build(...)")
+        unsafe { T::unchecked_build(self.item_slice(arena, idx)) }
     }
 
     #[inline]
     pub fn item_slice<'b>(&self, arena: &'b mut [u8], idx: ListLen) -> &'b mut [u8]
     where
-        T: Find,
+        T: Sizable,
     {
         assert!(idx < self.capacity);
 
-        &mut arena[T::find(self.lookup_table, idx) as usize..]
+        match T::size() {
+            SizeKind::Exactly(size) => &mut arena[idx as usize * size as usize..],
+            SizeKind::Dynamic => {
+                // TODO: Store index in a cache?
+
+                let mut ptr = 0;
+
+                for _ in 0..idx {
+                    ptr += T::read_size(&arena[ptr..]).expect(
+                        "List should have verified the integrity of the buffer on List::build(...)",
+                    ) as usize;
+                }
+
+                &mut arena[ptr..]
+            }
+        }
     }
 }
 
@@ -53,7 +69,7 @@ impl<'a, T> List<'a, T> {
     #[inline]
     unsafe fn get_from_imut<'b>(&'b self, idx: ListLen) -> T
     where
-        T: Find + Build<'b>,
+        T: Sizable + Build<'b>,
     {
         let mut_self: &mut Self = &mut *(self as *const Self as *mut Self);
 
@@ -63,7 +79,7 @@ impl<'a, T> List<'a, T> {
     #[inline]
     pub fn borrow<'b>(&'b self, idx: ListLen, cb: impl Fn(&T))
     where
-        T: Find + Build<'b>,
+        T: Sizable + Build<'b>,
     {
         // VERIFY: This should be fine as we only give access to a &T.
         cb(&unsafe { self.get_from_imut(idx) });
@@ -72,7 +88,7 @@ impl<'a, T> List<'a, T> {
     #[inline]
     pub fn borrowable<'b>(&'b self, idx: ListLen) -> impl Borrow<T>
     where
-        T: Find + Build<'b>,
+        T: Sizable + Build<'b>,
     {
         // VERIFY: This should be fine as we only give access to a &T.
         unsafe { self.get_from_imut(idx) }
@@ -82,69 +98,69 @@ impl<'a, T> List<'a, T> {
     #[inline]
     pub fn coerce<F: Fn(T)>(&self, cb: F) -> F
     where
-        T: Build<'a> + Find,
+        T: Build<'a> + Sizable,
     {
         cb
     }
 
     #[inline]
-    pub fn from(item_types: &[T]) -> DynamicItemListImprinter<T>
+    pub fn from<'b>(item_types: &'b [T]) -> DynamicItemListImprinter<'b, T>
     where
-        T: DynamicSize,
+        T: Imprinter,
     {
         DynamicItemListImprinter {
             list_imprinter: ListImprinter {
                 capacity: item_types.len() as ListLen,
-                phantom: PhantomData,
             },
-            items_sum_size: item_types.iter().map(|item| item.dsize()).sum(),
+            items_sum_size: item_types.iter().map(|item| item.result_size()).sum(),
             item_types: item_types,
         }
     }
 
     #[inline]
-    pub fn with_capacity(capacity: ListLen) -> StaticItemListImprinter<T>
-    where
-        T: StaticSize,
-    {
+    pub fn with_capacity(capacity: ListLen) -> StaticItemListImprinter<T> {
         StaticItemListImprinter {
-            list_imprinter: ListImprinter {
-                capacity: capacity,
-                phantom: PhantomData,
-            },
+            list_imprinter: ListImprinter { capacity: capacity },
+            phantom: PhantomData,
         }
     }
 }
 
-impl<'a, T> Find for List<'a, T> {
-    type Strategy = DynamicFind;
-}
+impl<'a, T: Sizable + Build<'a>> Build<'a> for List<'a, T> {
+    #[inline]
+    unsafe fn unchecked_build(arena: &'a mut [u8]) -> Self {
+        let capacity = ListLen::read(arena);
 
-impl<'a, T: Find + Build<'a>> Build<'a> for List<'a, T> {
+        List {
+            arena: &mut arena[LIST_LEN_SIZE as usize..],
+            inner: CovariantList {
+                capacity,
+                phantom: PhantomData,
+            },
+        }
+    }
+
     #[inline]
     fn build(arena: &'a mut [u8]) -> ::Result<(&mut [u8], Self)> {
         // First bytes of list is it's length
-        let (left, right) = arena.noser_split(LIST_LEN_SIZE)?;
+        let (left, arena) = arena.noser_split(LIST_LEN_SIZE)?;
         let capacity = ListLen::read(left);
-
-        // The next bytes are the lookup table iff T is dynamically sized.
-        let (lookup_table, arena) = T::get_lookup_table(right, capacity)?;
-
-        // The rest is the arena of this list
-
-        // Figure out the length of each element and write it to the lookup table,
-        // as we could panic if the lookup table received is invalid.
-        // Also return Err if arena is undersized here instead of in get's.
 
         let mut running_size: Ptr = 0;
 
-        for i in 0..capacity as usize {
-            let size = T::read_size(&arena[running_size as usize..])?;
-            running_size = running_size
-                .checked_add(size)
-                .ok_or(::NoserError::IntegerOverflow)?;
+        {
+            // The rest is the arena of this list
 
-            T::write_lookup_ptr(lookup_table, i, running_size);
+            // Figure out the length of each element and write it to the lookup table,
+            // as we could panic if the lookup table received is invalid.
+            // Also return Err if arena is undersized here instead of in get's.
+
+            for _ in 0..capacity as usize {
+                let size = T::in_bounds(&arena[running_size as usize..])?;
+                running_size = running_size
+                    .checked_add(size)
+                    .ok_or(::NoserError::IntegerOverflow)?;
+            }
         }
 
         let (arena, right) = arena.noser_split(running_size)?;
@@ -155,7 +171,6 @@ impl<'a, T: Find + Build<'a>> Build<'a> for List<'a, T> {
                 arena,
                 inner: CovariantList {
                     capacity,
-                    lookup_table,
                     phantom: PhantomData,
                 },
             },
@@ -163,124 +178,130 @@ impl<'a, T: Find + Build<'a>> Build<'a> for List<'a, T> {
     }
 }
 
-pub struct DynamicItemListImprinter<'a, A: 'a + DynamicSize> {
-    list_imprinter: ListImprinter<A>,
+impl<'a, T> Sizable for List<'a, T>
+where
+    T: Sizable,
+{
+    type Strategy = Dynamic;
+
+    fn read_size(arena: &[u8]) -> ::Result<::Ptr> {
+        let capacity = ListLen::read_safe(arena)?;
+
+        match T::size() {
+            SizeKind::Exactly(size) => Ok(ListLen::static_size() + capacity * size),
+            SizeKind::Dynamic => {
+                let mut read_head = ListLen::static_size();
+
+                for _ in 0..capacity {
+                    read_head += T::read_size(&arena[read_head as usize..]).map_err(Into::into)?;
+                }
+
+                Ok(read_head)
+            }
+        }
+    }
+}
+
+pub struct DynamicItemListImprinter<'a, A: 'a + Imprinter> {
+    list_imprinter: ListImprinter,
     item_types: &'a [A],
     items_sum_size: Ptr,
 }
 
-pub struct StaticItemListImprinter<A: StaticSize> {
-    list_imprinter: ListImprinter<A>,
-}
-
-struct ListImprinter<A> {
-    capacity: ListLen,
+pub struct StaticItemListImprinter<A> {
+    list_imprinter: ListImprinter,
     phantom: PhantomData<A>,
 }
 
-impl<'a, A: Find> Imprinter<'a> for ListImprinter<A> {
-    type OnSuccess = (&'a mut [u8], &'a mut [u8]);
+struct ListImprinter {
+    capacity: ListLen,
+}
 
+impl ListImprinter {
     #[inline]
-    fn imprint(&self, arena: &'a mut [u8]) -> ::Result<Self::OnSuccess> {
+    fn imprint<'a>(&self, arena: &'a mut [u8]) -> ::Result<&'a mut [u8]> {
         // First write the capacity of the list
         let (left, right) = arena.noser_split(LIST_LEN_SIZE)?;
         ListLen::write(left, self.capacity);
 
-        // Then return the lookup table and arena for further initialization.
-        Ok(A::get_lookup_table(right, self.capacity)?)
+        Ok(right)
     }
 }
 
-impl<'a, A> Imprinter<'a> for StaticItemListImprinter<A>
+impl<'a, A> Imprinter for StaticItemListImprinter<A>
 where
-    A: StaticSize + Find,
-{
-    type OnSuccess = ::std::slice::ChunksMut<'a, u8>;
-
-    #[inline]
-    fn imprint(&self, arena: &'a mut [u8]) -> ::Result<Self::OnSuccess> {
-        let capacity = self.list_imprinter.capacity;
-
-        // Static item list don't need to initialize the lookup table
-        let (_, right) = self.list_imprinter.imprint(arena)?;
-
-        // Ensure the arena is large enough
-        let (arena, _) = right.noser_split(capacity * A::size())?;
-
-        // TODO: Use exact_chunks_mut when stable #47115
-        Ok(arena.chunks_mut(A::size() as usize))
-    }
-}
-
-impl<'a, 'b, A: DynamicSize + Find + Imprinter<'a>> Imprinter<'a>
-    for DynamicItemListImprinter<'b, A>
+    A: Sizable<Strategy = Static>,
 {
     type OnSuccess = ();
 
     #[inline]
-    fn imprint(&self, arena: &'a mut [u8]) -> ::Result<Self::OnSuccess> {
-        let (lookup_table, right) = self.list_imprinter.imprint(arena)?;
+    fn imprint(&self, arena: &mut [u8]) -> ::Result<Self::OnSuccess> {
+        let capacity = self.list_imprinter.capacity;
 
-        let mut running_size = 0;
+        // Static item list don't need to initialize the lookup table
+        let arena = self.list_imprinter.imprint(arena)?;
 
-        // Fill the lookup table
-        for (kind, chunk) in self
-            .item_types
-            .iter()
-            .zip(lookup_table.chunks_mut(Ptr::size() as usize))
-        {
-            running_size += kind.dsize();
-            Ptr::write(chunk, running_size);
-        }
+        // Ensure the arena is large enough
+        arena.noser_split(capacity * A::static_size())?;
 
-        let cell = Cell::new(right);
+        Ok(())
+    }
 
-        // Call nested imprinters
+    #[inline]
+    fn result_size(&self) -> ::Ptr {
+        self.list_imprinter.capacity * A::static_size() + LIST_LEN_SIZE
+    }
+}
+
+impl<'a, A: Imprinter> Imprinter for DynamicItemListImprinter<'a, A> {
+    type OnSuccess = ();
+
+    #[inline]
+    fn imprint(&self, arena: &mut [u8]) -> ::Result<Self::OnSuccess> {
+        let arena = self.list_imprinter.imprint(arena)?;
+
+        // let lookup_table_size = Ptr::static_size() * self.item_types.len() as ::Ptr;
+        // let (lookup_table, right) = arena.noser_split(lookup_table_size)?;
+
+        // let mut item_ptr = self.list_imprinter.result_size() + lookup_table_size;
+        let cell = Cell::new(arena);
+
+        // for (kind, chunk) in self
+        //     .item_types
+        //     .iter()
+        //     .zip(lookup_table.chunks_mut(Ptr::static_size() as usize))
+        // {
+        //     let kind_size = kind.result_size();
+        //     item_ptr = item_ptr
+        //         .checked_add(kind_size)
+        //         .ok_or(::NoserError::IntegerOverflow)?;
+
+        //     Ptr::write(chunk, item_ptr);
         for kind in self.item_types {
-            let (left, right) = cell.take().noser_split(kind.dsize())?;
+            let (left, right) = cell.take().noser_split(kind.result_size())?;
             kind.imprint(left)?;
             cell.set(right);
         }
 
-        // Ok(self.item_types().map())
         Ok(())
     }
-}
 
-impl<'a, A: DynamicSize> DynamicSize for DynamicItemListImprinter<'a, A> {
     #[inline]
-    fn dsize(&self) -> Ptr {
-        // items_size + lookup table + len
-        self.items_sum_size + self.list_imprinter.capacity as Ptr * LTP_SIZE + LIST_LEN_SIZE
+    fn result_size(&self) -> ::Ptr {
+        self.items_sum_size + LIST_LEN_SIZE
     }
-}
-
-impl<'a, A: DynamicSize> Find for DynamicItemListImprinter<'a, A> {
-    type Strategy = DynamicFind;
-}
-
-impl<A: StaticSize> DynamicSize for StaticItemListImprinter<A> {
-    #[inline]
-    fn dsize(&self) -> Ptr {
-        // arena + capacity
-        self.list_imprinter.capacity * A::size() + LIST_LEN_SIZE
-    }
-}
-
-impl<A: StaticSize> Find for StaticItemListImprinter<A> {
-    type Strategy = DynamicFind;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use traits::Imprinter;
     use Literal;
 
     #[test]
     fn list() {
         let mut arena = List::<Literal<u8>>::with_capacity(10)
-            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
+            .create_buffer()
             .unwrap();
 
         let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
@@ -306,8 +327,8 @@ mod tests {
         let mut arena = List::from(&[
             List::<Literal<u8>>::with_capacity(2),
             List::<Literal<u8>>::with_capacity(2),
-        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
-            .unwrap();
+        ]).create_buffer()
+        .unwrap();
 
         let mut owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
 
@@ -339,18 +360,20 @@ mod tests {
     #[test]
     fn undersized_arena() {
         let mut arena = List::from(&[
-            List::<Literal<u8>>::with_capacity(2),
-            List::<Literal<u8>>::with_capacity(2),
-        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
-            .unwrap();
+            List::<Literal<u8>>::with_capacity(5),
+            List::<Literal<u8>>::with_capacity(5),
+            List::<Literal<u8>>::with_capacity(5),
+        ]).create_buffer()
+        .unwrap();
 
         let undersized = &mut arena[..23];
 
         let mut results = vec![];
         results.push(
             List::from(&[
-                List::<Literal<u8>>::with_capacity(2),
-                List::<Literal<u8>>::with_capacity(2),
+                List::<Literal<u8>>::with_capacity(5),
+                List::<Literal<u8>>::with_capacity(5),
+                List::<Literal<u8>>::with_capacity(5),
             ]).imprint(undersized),
         );
 
@@ -366,8 +389,8 @@ mod tests {
         let mut arena = List::from(&[
             List::<Literal<u8>>::with_capacity(2),
             List::<Literal<u8>>::with_capacity(2),
-        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
-            .unwrap();
+        ]).create_buffer()
+        .unwrap();
 
         let owned = List::<List<Literal<u8>>>::create(&mut arena).unwrap();
         owned.borrow(2, |_| {});
@@ -378,8 +401,8 @@ mod tests {
         let mut arena = List::from(&[
             List::<Literal<u8>>::with_capacity(2),
             List::<Literal<u8>>::with_capacity(2),
-        ]).create_buffer(|kind, buffer| kind.imprint(buffer))
-            .unwrap();
+        ]).create_buffer()
+        .unwrap();
 
         let owned = List::<List<Literal<u8>>>::create(&mut arena).unwrap();
         owned.borrow(1, |_| {});
@@ -389,7 +412,7 @@ mod tests {
     #[should_panic]
     fn out_of_bounds_list2() {
         let mut arena = List::<Literal<u8>>::with_capacity(50)
-            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
+            .create_buffer()
             .unwrap();
 
         let owned = List::<Literal<u8>>::create(&mut arena).unwrap();
@@ -399,7 +422,7 @@ mod tests {
     #[test]
     fn in_bounds_list2() {
         let mut arena = List::<Literal<u8>>::with_capacity(50)
-            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
+            .create_buffer()
             .unwrap();
 
         let owned = List::<Literal<u8>>::create(&mut arena).unwrap();

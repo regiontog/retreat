@@ -26,6 +26,10 @@ name = "list"
 path = "fuzz_targets/list.rs"
 
 [[bin]]
+name = "slice"
+path = "fuzz_targets/slice.rs"
+
+[[bin]]
 name = "nested_list"
 path = "fuzz_targets/nested_list.rs"
 
@@ -36,6 +40,10 @@ path = "fuzz_targets/u8.rs"
 [[bin]]
 name = "u16"
 path = "fuzz_targets/u16.rs"
+
+[[bin]]
+name = "str"
+path = "fuzz_targets/str.rs"
 
 [[bin]]
 name = "char"

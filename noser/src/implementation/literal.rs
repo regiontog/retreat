@@ -1,5 +1,5 @@
 use ext::SliceExt;
-use traits::{find::Find, Build, Imprinter, Read, StaticSize, Write};
+use traits::{size::ReadReturn, Build, Read, Sizable, Write};
 
 use std::marker::PhantomData;
 
@@ -23,21 +23,28 @@ impl<'a, T: Write> Literal<'a, T> {
     }
 }
 
-impl<'a, T: Find> Find for Literal<'a, T> {
+impl<'a, T: Sizable> Sizable for Literal<'a, T> {
     type Strategy = T::Strategy;
-}
 
-impl<'a, T: StaticSize> StaticSize for Literal<'a, T> {
     #[inline]
-    fn size() -> ::Ptr {
-        T::size()
+    fn read_size(arena: &[u8]) -> ReadReturn<T> {
+        T::read_size(arena)
     }
 }
 
-impl<'a, T: StaticSize> Build<'a> for Literal<'a, T> {
+impl<'a, T: Sizable> Build<'a> for Literal<'a, T> {
+    #[inline]
+    unsafe fn unchecked_build(arena: &'a mut [u8]) -> Self {
+        Literal {
+            arena: arena,
+            phantom: PhantomData,
+        }
+    }
+
     #[inline]
     fn build(arena: &'a mut [u8]) -> ::Result<(&'a mut [u8], Self)> {
-        let (left, right) = arena.noser_split(T::size())?;
+        let size = T::read_size(arena).map_err(Into::into)?;
+        let (left, right) = arena.noser_split(size)?;
 
         Ok((
             right,
@@ -49,27 +56,15 @@ impl<'a, T: StaticSize> Build<'a> for Literal<'a, T> {
     }
 }
 
-impl<'a, T: StaticSize> Imprinter<'a> for T {
-    type OnSuccess = ();
-
-    #[inline]
-    fn imprint(&self, arena: &'a mut [u8]) -> ::Result<()> {
-        // TODO: It's surprising that 10.imprint(arena) does not write 10 to the arena.
-        arena.noser_split(Self::size())?;
-        Ok(())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use implementation::scalars;
     use traits::*;
 
     #[test]
     fn literal() {
-        let mut arena = 0u8
-            .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
-            .unwrap();
+        let mut arena = scalars::IMPRINT_U8.create_buffer().unwrap();
 
         let mut owned: Literal<u8> = Literal::create(&mut arena).unwrap();
         owned.write(10);
@@ -79,15 +74,13 @@ mod tests {
 
     #[test]
     fn undersized_arena() {
-        let mut arena = 0u64
-            .create_buffer(|kind, buffer| kind.imprint(buffer))
-            .unwrap();
+        let mut arena = scalars::IMPRINT_U64.create_buffer().unwrap();
 
         let undersized = &mut arena[..3];
 
         let mut results = vec![];
 
-        results.push(0u64.imprint(undersized));
+        results.push(scalars::IMPRINT_U64.imprint(undersized));
         results.push(Literal::<u64>::create(undersized).map(|_| ()));
 
         println!("{:?}", results);

@@ -27,7 +27,7 @@ fn read_u64(b: &mut Bencher) {
 #[bench]
 fn list_write4(b: &mut Bencher) {
     let mut arena = List::<Literal<u8>>::with_capacity(10)
-        .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
+        .create_buffer()
         .unwrap();
 
     let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
@@ -53,7 +53,7 @@ fn list_write4(b: &mut Bencher) {
 #[bench]
 fn list_read4(b: &mut Bencher) {
     let mut arena = List::<Literal<u8>>::with_capacity(10)
-        .create_buffer(|kind, buffer| kind.imprint_disregard_result(buffer))
+        .create_buffer()
         .unwrap();
 
     let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
@@ -84,8 +84,8 @@ fn nested_list_write_value_in_4_sublists(b: &mut Bencher) {
         List::<Literal<u8>>::with_capacity(2),
         List::<Literal<u8>>::with_capacity(2),
         List::<Literal<u8>>::with_capacity(2),
-    ]).create_buffer(|kind, buffer| kind.imprint(buffer))
-        .unwrap();
+    ]).create_buffer()
+    .unwrap();
 
     let mut owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
 
@@ -123,8 +123,8 @@ fn nested_list_read_value_in_4_sublists(b: &mut Bencher) {
         List::<Literal<u8>>::with_capacity(2),
         List::<Literal<u8>>::with_capacity(2),
         List::<Literal<u8>>::with_capacity(2),
-    ]).create_buffer(|kind, buffer| kind.imprint(buffer))
-        .unwrap();
+    ]).create_buffer()
+    .unwrap();
 
     let owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
 
