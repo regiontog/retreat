@@ -1,21 +1,21 @@
 pub trait SizeStrategy {
-    type ErrorType: Into<::NoserError> + ::std::fmt::Debug;
+    type ErrorType: Into<crate::NoserError> + ::std::fmt::Debug;
 
     fn dynamic() -> bool;
 }
 
 pub enum SizeKind {
     Dynamic,
-    Exactly(::Ptr),
+    Exactly(crate::Ptr),
 }
 
 pub trait Sizable {
     type Strategy: SizeStrategy;
 
-    fn read_size(&[u8]) -> ReadReturn<Self>;
+    fn read_size(_: &[u8]) -> ReadReturn<Self>;
 
     #[inline]
-    fn static_size() -> ::Ptr
+    fn static_size() -> crate::Ptr
     where
         Self::Strategy: SizeStrategy<ErrorType = NoError>,
     {
@@ -35,11 +35,11 @@ pub trait Sizable {
     }
 
     #[inline]
-    fn in_bounds(arena: &[u8]) -> ::Result<::Ptr> {
+    fn in_bounds(arena: &[u8]) -> crate::Result<crate::Ptr> {
         let size = Self::read_size(arena).map_err(Into::into)?;
 
         if arena.len() < size as usize {
-            return Err(::NoserError::Undersized(size as usize, arena.to_owned()));
+            return Err(crate::NoserError::Undersized(size as usize, arena.to_owned()));
         }
 
         Ok(size)
@@ -50,10 +50,10 @@ pub trait Sizable {
 pub enum NoError {}
 
 #[allow(type_alias_bounds)]
-pub type ReadReturn<T: Sizable> = Result<::Ptr, <T::Strategy as SizeStrategy>::ErrorType>;
+pub type ReadReturn<T: Sizable> = Result<crate::Ptr, <T::Strategy as SizeStrategy>::ErrorType>;
 
-impl Into<::NoserError> for NoError {
-    fn into(self) -> ::NoserError {
+impl Into<crate::NoserError> for NoError {
+    fn into(self) -> crate::NoserError {
         unreachable!()
     }
 }
@@ -70,7 +70,7 @@ impl SizeStrategy for Static {
 }
 
 impl SizeStrategy for Dynamic {
-    type ErrorType = ::NoserError;
+    type ErrorType = crate::NoserError;
 
     fn dynamic() -> bool {
         true

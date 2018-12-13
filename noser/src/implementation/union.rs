@@ -1,4 +1,4 @@
-use traits::{Build, Variants};
+use crate::traits::{Build, Variants};
 
 #[inline]
 pub fn write_var_len_int(buffer: &mut [u8], len: usize, int: u64) {
@@ -24,7 +24,7 @@ pub fn read_var_len_int(buffer: &[u8], len: usize) -> u64 {
 
 impl<'a, V: Variants<'a>> Build<'a> for V {
     #[inline]
-    fn build(arena: &'a mut [u8]) -> ::Result<(&'a mut [u8], Self)> {
+    fn build(arena: &'a mut [u8]) -> crate::Result<(&'a mut [u8], Self)> {
         let variant_bytes = Self::bytes_for_n_variants();
         let (left, right) = arena.split_at_mut(variant_bytes);
 

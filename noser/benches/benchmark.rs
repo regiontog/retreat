@@ -26,11 +26,11 @@ fn read_u64(b: &mut Bencher) {
 
 #[bench]
 fn list_write4(b: &mut Bencher) {
-    let mut arena = List::<Literal<u8>>::with_capacity(10)
+    let mut arena = List::<Literal<'_, u8>>::with_capacity(10)
         .create_buffer()
         .unwrap();
 
-    let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
+    let mut owned: List<'_, Literal<'_, u8>> = List::create(&mut arena).unwrap();
     b.iter(|| {
         get!(owned, 0, |mut item| {
             item.write(10);
@@ -52,11 +52,11 @@ fn list_write4(b: &mut Bencher) {
 
 #[bench]
 fn list_read4(b: &mut Bencher) {
-    let mut arena = List::<Literal<u8>>::with_capacity(10)
+    let mut arena = List::<Literal<'_, u8>>::with_capacity(10)
         .create_buffer()
         .unwrap();
 
-    let mut owned: List<Literal<u8>> = List::create(&mut arena).unwrap();
+    let mut owned: List<'_, Literal<'_, u8>> = List::create(&mut arena).unwrap();
 
     b.iter(|| {
         get!(owned, 0, |item| {
@@ -80,14 +80,14 @@ fn list_read4(b: &mut Bencher) {
 #[bench]
 fn nested_list_write_value_in_4_sublists(b: &mut Bencher) {
     let mut arena = List::from(&[
-        List::<Literal<u8>>::with_capacity(2),
-        List::<Literal<u8>>::with_capacity(2),
-        List::<Literal<u8>>::with_capacity(2),
-        List::<Literal<u8>>::with_capacity(2),
+        List::<Literal<'_, u8>>::with_capacity(2),
+        List::<Literal<'_, u8>>::with_capacity(2),
+        List::<Literal<'_, u8>>::with_capacity(2),
+        List::<Literal<'_, u8>>::with_capacity(2),
     ]).create_buffer()
     .unwrap();
 
-    let mut owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
+    let mut owned: List<'_, List<'_, Literal<'_, u8>>> = List::create(&mut arena).unwrap();
 
     b.iter(|| {
         get!(owned, 0, |mut sublist| {
@@ -119,14 +119,14 @@ fn nested_list_write_value_in_4_sublists(b: &mut Bencher) {
 #[bench]
 fn nested_list_read_value_in_4_sublists(b: &mut Bencher) {
     let mut arena = List::from(&[
-        List::<Literal<u8>>::with_capacity(2),
-        List::<Literal<u8>>::with_capacity(2),
-        List::<Literal<u8>>::with_capacity(2),
-        List::<Literal<u8>>::with_capacity(2),
+        List::<Literal<'_, u8>>::with_capacity(2),
+        List::<Literal<'_, u8>>::with_capacity(2),
+        List::<Literal<'_, u8>>::with_capacity(2),
+        List::<Literal<'_, u8>>::with_capacity(2),
     ]).create_buffer()
     .unwrap();
 
-    let owned: List<List<Literal<u8>>> = List::create(&mut arena).unwrap();
+    let owned: List<'_, List<'_, Literal<'_, u8>>> = List::create(&mut arena).unwrap();
 
     b.iter(|| {
         owned.borrow(0, |sublist| {

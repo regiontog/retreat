@@ -1,5 +1,5 @@
-use ext::SliceExt;
-use traits::{size::ReadReturn, Build, Read, Sizable, Write};
+use crate::ext::SliceExt;
+use crate::traits::{size::ReadReturn, Build, Read, Sizable, Write};
 
 use std::marker::PhantomData;
 
@@ -42,7 +42,7 @@ impl<'a, T: Sizable> Build<'a> for Literal<'a, T> {
     }
 
     #[inline]
-    fn build(arena: &'a mut [u8]) -> ::Result<(&'a mut [u8], Self)> {
+    fn build(arena: &'a mut [u8]) -> crate::Result<(&'a mut [u8], Self)> {
         let size = T::read_size(arena).map_err(Into::into)?;
         let (left, right) = arena.noser_split(size)?;
 
@@ -59,14 +59,14 @@ impl<'a, T: Sizable> Build<'a> for Literal<'a, T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use implementation::scalars;
-    use traits::*;
+    use crate::implementation::scalars;
+    use crate::traits::*;
 
     #[test]
     fn literal() {
         let mut arena = scalars::IMPRINT_U8.create_buffer().unwrap();
 
-        let mut owned: Literal<u8> = Literal::create(&mut arena).unwrap();
+        let mut owned: Literal<'_, u8> = Literal::create(&mut arena).unwrap();
         owned.write(10);
 
         assert_eq!(owned.read(), 10);

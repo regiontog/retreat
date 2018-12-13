@@ -1,6 +1,6 @@
 use std::mem;
 
-use traits::{size::Dynamic, Read, Sizable, Write};
+use crate::traits::{size::Dynamic, Read, Sizable, Write};
 
 macro_rules! impl_slice_rw {
     ($ty:ident, $($rw:tt)*) => {
@@ -10,9 +10,9 @@ macro_rules! impl_slice_rw {
             type Strategy = Dynamic;
 
             #[inline]
-            fn read_size(arena: &[u8]) -> ::Result<::Ptr> {
-                let len = ::Ptr::read_safe(arena)? as usize;
-                Ok((len * mem::size_of::<$ty>()) as ::Ptr)
+            fn read_size(arena: &[u8]) -> crate::Result<crate::Ptr> {
+                let len = crate::Ptr::read_safe(arena)? as usize;
+                Ok((len * mem::size_of::<$ty>()) as crate::Ptr)
             }
         }
     };
@@ -24,8 +24,8 @@ impl_slice_rw!(u8,
         #[inline]
         fn write(arena: &mut [u8], val: Self) {
             let len = val.len();
-            ::Ptr::write(arena, len as ::Ptr);
-            unsafe { ::std::ptr::copy_nonoverlapping(val.as_ptr(), arena[mem::size_of::<::Ptr>()..len].as_mut_ptr(), len) }
+            crate::Ptr::write(arena, len as crate::Ptr);
+            unsafe { ::std::ptr::copy_nonoverlapping(val.as_ptr(), arena[mem::size_of::<crate::Ptr>()..len].as_mut_ptr(), len) }
         }
     }
 
@@ -35,8 +35,8 @@ impl_slice_rw!(u8,
         #[inline]
         /// Unsafe if reported length is larger than bytes in arena.
         fn read(arena: &'a [u8]) -> Self {
-            let len = ::Ptr::read(arena) as usize;
-            &arena[mem::size_of::<::Ptr>()..len+mem::size_of::<::Ptr>()]
+            let len = crate::Ptr::read(arena) as usize;
+            &arena[mem::size_of::<crate::Ptr>()..len+mem::size_of::<crate::Ptr>()]
         }
     }
 );
@@ -61,7 +61,7 @@ impl<'a> Sizable for &'a str {
     type Strategy = Dynamic;
 
     #[inline]
-    fn read_size(arena: &[u8]) -> ::Result<::Ptr> {
+    fn read_size(arena: &[u8]) -> crate::Result<crate::Ptr> {
         <&[u8]>::read_size(arena)
     }
 }

@@ -25,7 +25,7 @@ pub const PTR_SIZE: Ptr = ::std::mem::size_of::<Ptr>() as Ptr;
 mod implementation;
 pub mod traits;
 
-pub use implementation::*;
+pub use crate::implementation::*;
 
 #[derive(Debug)]
 pub enum NoserError {
@@ -42,16 +42,16 @@ pub type Result<T> = ::std::result::Result<T, NoserError>;
 
 mod ext {
     pub trait SliceExt {
-        fn noser_split(&mut self, at: ::Ptr) -> ::Result<(&mut Self, &mut Self)>;
+        fn noser_split(&mut self, at: crate::Ptr) -> crate::Result<(&mut Self, &mut Self)>;
     }
 
     impl SliceExt for [u8] {
         #[inline]
-        fn noser_split(&mut self, at: ::Ptr) -> ::Result<(&mut [u8], &mut [u8])> {
+        fn noser_split(&mut self, at: crate::Ptr) -> crate::Result<(&mut [u8], &mut [u8])> {
             let at = at as usize;
 
             if self.len() < at {
-                return Err(::NoserError::Undersized(at, self.to_vec()));
+                return Err(crate::NoserError::Undersized(at, self.to_vec()));
             }
 
             Ok(self.split_at_mut(at))

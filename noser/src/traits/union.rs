@@ -2,7 +2,7 @@ pub trait Variants<'a>: Sized {
     fn variants() -> u64;
     fn ord(&self) -> u64;
 
-    fn variant(u64, &'a mut [u8]) -> ::Result<(&'a mut [u8], Self)>;
+    fn variant(_: u64, _: &'a mut [u8]) -> crate::Result<(&'a mut [u8], Self)>;
 
     #[inline]
     fn bytes_for_n_variants() -> usize {

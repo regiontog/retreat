@@ -1,7 +1,7 @@
 use std::mem;
-use traits::Imprinter;
+use crate::traits::Imprinter;
 
-use traits::{
+use crate::traits::{
     size::{ReadReturn, Static},
     Read, Sizable, Write,
 };
@@ -19,18 +19,18 @@ macro_rules! impl_rw {
             type OnSuccess = ();
 
             #[inline]
-            fn imprint(&self, arena: &mut [u8]) -> ::Result<()> {
+            fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
                 if arena.len() >= mem::size_of::<$ty>() {
                     // Scalars don't need to write any size information
                     Ok(())
                 } else {
-                    Err(::NoserError::Undersized(mem::size_of::<$ty>(), arena.to_vec()))
+                    Err(crate::NoserError::Undersized(mem::size_of::<$ty>(), arena.to_vec()))
                 }
             }
 
             #[inline]
-            fn result_size(&self) -> ::Ptr {
-                mem::size_of::<$ty>() as ::Ptr
+            fn result_size(&self) -> crate::Ptr {
+                mem::size_of::<$ty>() as crate::Ptr
             }
         }
 
@@ -40,8 +40,8 @@ macro_rules! impl_rw {
             type Strategy = Static;
 
             #[inline]
-            fn read_size(_: &[u8]) -> ReadReturn<::Ptr> {
-                Ok(mem::size_of::<$ty>() as ::Ptr)
+            fn read_size(_: &[u8]) -> ReadReturn<crate::Ptr> {
+                Ok(mem::size_of::<$ty>() as crate::Ptr)
             }
         }
     };
