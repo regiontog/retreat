@@ -11,8 +11,12 @@ macro_rules! impl_slice_rw {
 
             #[inline]
             fn read_size(arena: &[u8]) -> crate::Result<crate::Ptr> {
-                let len = crate::Ptr::read_safe(arena)? as usize;
-                Ok((len * mem::size_of::<$ty>()) as crate::Ptr)
+                let len = crate::Ptr::read_safe(arena)?;
+                Ok(len
+                    .checked_mul(mem::size_of::<$ty>() as crate::Ptr)
+                    .and_then(|r| r.checked_add(crate::Ptr::static_size()))
+                    .ok_or(crate::NoserError::IntegerOverflow)?
+                )
             }
         }
     };

@@ -188,7 +188,11 @@ where
         let capacity = ListLen::read_safe(arena)?;
 
         match T::size() {
-            SizeKind::Exactly(size) => Ok(ListLen::static_size() + capacity * size),
+            SizeKind::Exactly(size) => Ok(capacity
+                .checked_mul(size)
+                .and_then(|mul| ListLen::static_size().checked_add(mul))
+                .ok_or(crate::NoserError::IntegerOverflow)?),
+
             SizeKind::Dynamic => {
                 let mut read_head = ListLen::static_size();
 

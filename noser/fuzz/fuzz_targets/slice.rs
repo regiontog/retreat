@@ -7,11 +7,10 @@ use noser::traits::Build;
 use noser::Literal;
 
 fuzz_target!(|data: &[u8]| {
-    let byte_arr = <&[u8]>::read(data);
-
+    let ref mut data = data.to_vec();
     let mut temp;
 
-    if let Ok(lit) = Literal::<&[u8]>::create(&mut data) {
+    if let Ok(lit) = Literal::<&[u8]>::create(data) {
         for byte in lit.read() {
             temp = *byte;
         }
