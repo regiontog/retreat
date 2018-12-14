@@ -1,11 +1,18 @@
-pub trait Build<'a>: Sized {
+pub trait Build<'b>: Sized {
     // TODO: Associated type for arena (AsRef, AsMut)
-    fn build(_: &'a mut [u8]) -> Result<'a, Self>;
+    fn build<'a>(_: &'a mut [u8]) -> Result<'a, Self>
+    where
+        'a: 'b;
 
-    unsafe fn unchecked_build(_: &'a mut [u8]) -> Self;
+    unsafe fn unchecked_build<'a>(_: &'a mut [u8]) -> Self
+    where
+        'a: 'b;
 
     #[inline]
-    fn create(arena: &'a mut [u8]) -> crate::Result<Self> {
+    fn create<'a>(arena: &'a mut [u8]) -> crate::Result<Self>
+    where
+        'a: 'b,
+    {
         Self::build(arena).map(|(_, this)| this)
     }
 }

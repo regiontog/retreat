@@ -4,26 +4,38 @@ use crate::traits::{size::ReadReturn, Build, Read, Sizable, Write};
 use std::marker::PhantomData;
 
 #[derive(Debug)]
-pub struct Literal<'a, T> {
-    arena: &'a mut [u8],
+pub struct Literal<'l, T> {
+    arena: &'l mut [u8],
     phantom: PhantomData<T>,
 }
 
-impl<'a, T: Read<'a>> Literal<'a, T> {
+impl<'r, T> Literal<'_, T>
+where
+    T: Read<'r>,
+{
     #[inline]
-    pub fn read(&'a self) -> T::Output {
+    pub fn read<'s>(&'s self) -> T::Output
+    where
+        's: 'r,
+    {
         T::read(self.arena)
     }
 }
 
-impl<'a, T: Write> Literal<'a, T> {
+impl<T> Literal<'_, T>
+where
+    T: Write,
+{
     #[inline]
     pub fn write(&mut self, val: T) {
         T::write(self.arena, val)
     }
 }
 
-impl<'a, T: Sizable> Sizable for Literal<'a, T> {
+impl<T> Sizable for Literal<'_, T>
+where
+    T: Sizable,
+{
     type Strategy = T::Strategy;
 
     #[inline]
@@ -32,9 +44,15 @@ impl<'a, T: Sizable> Sizable for Literal<'a, T> {
     }
 }
 
-impl<'a, T: Sizable> Build<'a> for Literal<'a, T> {
+impl<'l, T> Build<'l> for Literal<'l, T>
+where
+    T: Sizable,
+{
     #[inline]
-    unsafe fn unchecked_build(arena: &'a mut [u8]) -> Self {
+    unsafe fn unchecked_build<'a>(arena: &'a mut [u8]) -> Self
+    where
+        'a: 'l,
+    {
         Literal {
             arena: arena,
             phantom: PhantomData,
@@ -42,7 +60,10 @@ impl<'a, T: Sizable> Build<'a> for Literal<'a, T> {
     }
 
     #[inline]
-    fn build(arena: &'a mut [u8]) -> crate::Result<(&'a mut [u8], Self)> {
+    fn build<'a>(arena: &'a mut [u8]) -> crate::Result<(&'a mut [u8], Self)>
+    where
+        'a: 'l,
+    {
         let size = T::read_size(arena).map_err(Into::into)?;
         let (left, right) = arena.noser_split(size)?;
 

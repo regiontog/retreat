@@ -22,25 +22,34 @@ macro_rules! impl_slice_rw {
     };
 }
 
-impl_slice_rw!(u8,
+impl_slice_rw!(
+    u8,
     impl<'a> Write for &'a [u8] {
         /// Performs a copy of each element in the slice.
         #[inline]
         fn write(arena: &mut [u8], val: Self) {
             let len = val.len();
             crate::Ptr::write(arena, len as crate::Ptr);
-            unsafe { ::std::ptr::copy_nonoverlapping(val.as_ptr(), arena[mem::size_of::<crate::Ptr>()..len].as_mut_ptr(), len) }
+            unsafe {
+                ::std::ptr::copy_nonoverlapping(
+                    val.as_ptr(),
+                    arena[mem::size_of::<crate::Ptr>()..len].as_mut_ptr(),
+                    len,
+                )
+            }
         }
     }
-
-    impl<'a> Read<'a> for &'a [u8] {
+    impl<'r> Read<'r> for &'r [u8] {
         type Output = Self;
 
         #[inline]
         /// Unsafe if reported length is larger than bytes in arena.
-        fn read(arena: &'a [u8]) -> Self {
+        fn read<'a>(arena: &'a [u8]) -> Self
+        where
+            'a: 'r,
+        {
             let len = crate::Ptr::read(arena) as usize;
-            &arena[mem::size_of::<crate::Ptr>()..len+mem::size_of::<crate::Ptr>()]
+            &arena[mem::size_of::<crate::Ptr>()..len + mem::size_of::<crate::Ptr>()]
         }
     }
 );
@@ -52,11 +61,11 @@ impl<'a> Write for &'a str {
     }
 }
 
-impl<'a> Read<'a> for &'a str {
+impl<'r> Read<'r> for &'r str {
     type Output = Result<Self, ::std::str::Utf8Error>;
 
     #[inline]
-    fn read(arena: &'a [u8]) -> Self::Output {
+    fn read<'a>(arena: &'a [u8]) -> Self::Output where 'a: 'r {
         ::std::str::from_utf8(<&[u8]>::read(arena))
     }
 }

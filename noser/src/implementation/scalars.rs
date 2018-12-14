@@ -1,5 +1,5 @@
-use std::mem;
 use crate::traits::Imprinter;
+use std::mem;
 
 use crate::traits::{
     size::{ReadReturn, Static},
@@ -16,8 +16,6 @@ macro_rules! impl_rw {
         }
 
         impl Imprinter for $imp_name::ScalarImprinter {
-            type OnSuccess = ();
-
             #[inline]
             fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
                 if arena.len() >= mem::size_of::<$ty>() {
@@ -58,11 +56,11 @@ macro_rules! transmutable_without_endianness_tansform {
                 }
             }
 
-            impl<'a> Read<'a> for $ty {
+            impl<'r> Read<'r> for $ty {
                 type Output = $ty;
 
                 #[inline]
-                fn read(arena: &[u8]) -> $ty {
+                fn read<'a>(arena: &'a [u8]) -> $ty where 'a: 'r {
                     let p = (&arena[..mem::size_of::<$ty>()]).as_ptr() as *const $ty;
                     unsafe { *p }
                 }
@@ -82,11 +80,11 @@ macro_rules! transmutable {
                 }
             }
 
-            impl<'a> Read<'a> for $ty {
+            impl<'r> Read<'r> for $ty {
                 type Output = $ty;
 
                 #[inline]
-                fn read(arena: &[u8]) -> $ty {
+                fn read<'a>(arena: &'a [u8]) -> $ty where 'a: 'r {
                     let p = (&arena[..mem::size_of::<$ty>()]).as_ptr() as *const $ty;
                     $ty::from_le(unsafe { *p })
                 }
@@ -103,11 +101,11 @@ impl_rw!(IMPRINT_U8, u8,
         }
     }
 
-    impl<'a> Read<'a> for u8 {
+    impl<'r> Read<'r> for u8 {
         type Output = u8;
 
         #[inline]
-        fn read(arena: &[u8]) -> u8 {
+        fn read<'a>(arena: &'a [u8]) -> u8 where 'a: 'r {
             arena[0]
         }
     }
@@ -135,11 +133,11 @@ impl_rw!(IMPRINT_CHAR, char,
         }
     }
 
-    impl<'a> Read<'a> for char {
+    impl<'r> Read<'r> for char {
         type Output = Option<char>;
 
         #[inline]
-        fn read(arena: &[u8]) -> Option<char> {
+        fn read<'a>(arena: &'a [u8]) -> Option<char> where 'a: 'r {
             ::std::char::from_u32(u32::read(arena))
         }
     }
@@ -153,11 +151,11 @@ impl_rw!(IMPRINT_F32, f32,
         }
     }
 
-    impl<'a> Read<'a> for f32 {
+    impl<'r> Read<'r> for f32 {
         type Output = f32;
 
         #[inline]
-        fn read(arena: &[u8]) -> f32 {
+        fn read<'a>(arena: &'a [u8]) -> f32 where 'a: 'r {
             unsafe { *(&u32::read(arena) as *const u32 as *const f32) }
         }
     }
@@ -171,11 +169,11 @@ impl_rw!(IMPRINT_F64, f64,
         }
     }
 
-    impl<'a> Read<'a> for f64 {
+    impl<'r> Read<'r> for f64 {
         type Output = f64;
 
         #[inline]
-        fn read(arena: &[u8]) -> f64 {
+        fn read<'a>(arena: &'a [u8]) -> f64 where 'a: 'r {
             unsafe { *(&u64::read(arena) as *const u64 as *const f64) }
         }
     }

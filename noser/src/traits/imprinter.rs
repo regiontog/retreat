@@ -1,7 +1,5 @@
 pub trait Imprinter {
-    type OnSuccess;
-
-    fn imprint(&self, arena: &mut [u8]) -> crate::Result<Self::OnSuccess>;
+    fn imprint(&self, arena: &mut [u8]) -> crate::Result<()>;
 
     fn result_size(&self) -> crate::Ptr;
 

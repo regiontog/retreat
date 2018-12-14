@@ -1,12 +1,10 @@
 use crate::ext::SliceExt;
-// use traits::find::{DynamicFind, Find, LTP_SIZE};
 use crate::traits::{
     size::{Dynamic, SizeKind, Static},
     Build, Imprinter, Read, Sizable, Write,
 };
 use crate::Ptr;
 
-use std::borrow::Borrow;
 use std::cell::Cell;
 use std::marker::PhantomData;
 
@@ -20,22 +18,56 @@ pub struct CovariantList<T> {
 }
 
 #[derive(Debug)]
-pub struct List<'a, T> {
+pub struct List<'l, T> {
     pub inner: CovariantList<T>,
-    pub arena: &'a mut [u8],
+    pub arena: &'l mut [u8],
 }
 
-impl<'a, T> CovariantList<T> {
+pub struct DynamicItemListImprinter<'a, A: Imprinter> {
+    list_imprinter: ListImprinter,
+    item_types: &'a [A],
+    items_sum_size: Ptr,
+}
+
+pub struct StaticItemListImprinter<A> {
+    list_imprinter: ListImprinter,
+    phantom: PhantomData<A>,
+}
+
+struct ListImprinter {
+    capacity: ListLen,
+}
+
+struct Ref<T> {
+    inner: T,
+}
+
+impl<T> Ref<T> {
+    fn new(value: T) -> Self {
+        Ref { inner: value }
+    }
+}
+
+impl<T> std::ops::Deref for Ref<T> {
+    type Target = T;
+
+    fn deref(&self) -> &T {
+        &self.inner
+    }
+}
+
+impl<T> CovariantList<T> {
     #[inline]
-    pub fn get<'b>(&self, arena: &'b mut [u8], idx: ListLen) -> T
+    pub fn get<'a, 't>(&self, arena: &'a mut [u8], idx: ListLen) -> T
     where
-        T: Sizable + Build<'b>,
+        T: Sizable + Build<'t>,
+        'a: 't,
     {
         unsafe { T::unchecked_build(self.item_slice(arena, idx)) }
     }
 
     #[inline]
-    pub fn item_slice<'b>(&self, arena: &'b mut [u8], idx: ListLen) -> &'b mut [u8]
+    pub fn item_slice<'a>(&self, arena: &'a mut [u8], idx: ListLen) -> &'a mut [u8]
     where
         T: Sizable,
     {
@@ -60,16 +92,26 @@ impl<'a, T> CovariantList<T> {
     }
 }
 
-impl<'a, T> List<'a, T> {
+impl<T> List<'_, T> {
     #[inline]
     pub fn capacity(&self) -> u32 {
         self.inner.capacity
     }
 
     #[inline]
-    unsafe fn get_from_imut<'b>(&'b self, idx: ListLen) -> T
+    pub fn get<'t, 's>(&'s mut self, idx: ListLen) -> T
     where
-        T: Sizable + Build<'b>,
+        T: Sizable + Build<'t>,
+        's: 't,
+    {
+        self.inner.get(self.arena, idx)
+    }
+
+    #[inline]
+    unsafe fn get_from_imut<'t, 's>(&'s self, idx: ListLen) -> T
+    where
+        T: Sizable + Build<'t>,
+        's: 't,
     {
         let mut_self: &mut Self = &mut *(self as *const Self as *mut Self);
 
@@ -77,30 +119,12 @@ impl<'a, T> List<'a, T> {
     }
 
     #[inline]
-    pub fn borrow<'b>(&'b self, idx: ListLen, cb: impl Fn(&T))
+    pub fn borrow<'t, 's>(&'s self, idx: ListLen) -> impl std::ops::Deref<Target = T>
     where
-        T: Sizable + Build<'b>,
+        T: Sizable + Build<'t>,
+        's: 't,
     {
-        // VERIFY: This should be fine as we only give access to a &T.
-        cb(&unsafe { self.get_from_imut(idx) });
-    }
-
-    #[inline]
-    pub fn borrowable<'b>(&'b self, idx: ListLen) -> impl Borrow<T>
-    where
-        T: Sizable + Build<'b>,
-    {
-        // VERIFY: This should be fine as we only give access to a &T.
-        unsafe { self.get_from_imut(idx) }
-    }
-
-    /// Helper function to coerce a closure's input type to this instance's T
-    #[inline]
-    pub fn coerce<F: Fn(T)>(&self, cb: F) -> F
-    where
-        T: Build<'a> + Sizable,
-    {
-        cb
+        Ref::new(unsafe { self.get_from_imut(idx) })
     }
 
     #[inline]
@@ -126,9 +150,15 @@ impl<'a, T> List<'a, T> {
     }
 }
 
-impl<'a, T: Sizable + Build<'a>> Build<'a> for List<'a, T> {
+impl<'l, T> Build<'l> for List<'l, T>
+where
+    T: Sizable,
+{
     #[inline]
-    unsafe fn unchecked_build(arena: &'a mut [u8]) -> Self {
+    unsafe fn unchecked_build<'a>(arena: &'a mut [u8]) -> Self
+    where
+        'a: 'l,
+    {
         let capacity = ListLen::read(arena);
 
         List {
@@ -141,7 +171,10 @@ impl<'a, T: Sizable + Build<'a>> Build<'a> for List<'a, T> {
     }
 
     #[inline]
-    fn build(arena: &'a mut [u8]) -> crate::Result<(&mut [u8], Self)> {
+    fn build<'a>(arena: &'a mut [u8]) -> crate::Result<(&'a mut [u8], Self)>
+    where
+        'a: 'l,
+    {
         // First bytes of list is it's length
         let (left, arena) = arena.noser_split(LIST_LEN_SIZE)?;
         let capacity = ListLen::read(left);
@@ -178,7 +211,7 @@ impl<'a, T: Sizable + Build<'a>> Build<'a> for List<'a, T> {
     }
 }
 
-impl<'a, T> Sizable for List<'a, T>
+impl<T> Sizable for List<'_, T>
 where
     T: Sizable,
 {
@@ -206,21 +239,6 @@ where
     }
 }
 
-pub struct DynamicItemListImprinter<'a, A: Imprinter> {
-    list_imprinter: ListImprinter,
-    item_types: &'a [A],
-    items_sum_size: Ptr,
-}
-
-pub struct StaticItemListImprinter<A> {
-    list_imprinter: ListImprinter,
-    phantom: PhantomData<A>,
-}
-
-struct ListImprinter {
-    capacity: ListLen,
-}
-
 impl ListImprinter {
     #[inline]
     fn imprint<'a>(&self, arena: &'a mut [u8]) -> crate::Result<&'a mut [u8]> {
@@ -232,14 +250,12 @@ impl ListImprinter {
     }
 }
 
-impl<'a, A> Imprinter for StaticItemListImprinter<A>
+impl<A> Imprinter for StaticItemListImprinter<A>
 where
     A: Sizable<Strategy = Static>,
 {
-    type OnSuccess = ();
-
     #[inline]
-    fn imprint(&self, arena: &mut [u8]) -> crate::Result<Self::OnSuccess> {
+    fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
         let capacity = self.list_imprinter.capacity;
 
         // Static item list don't need to initialize the lookup table
@@ -257,30 +273,15 @@ where
     }
 }
 
-impl<'a, A: Imprinter> Imprinter for DynamicItemListImprinter<'a, A> {
-    type OnSuccess = ();
-
+impl<A> Imprinter for DynamicItemListImprinter<'_, A>
+where
+    A: Imprinter,
+{
     #[inline]
-    fn imprint(&self, arena: &mut [u8]) -> crate::Result<Self::OnSuccess> {
+    fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
         let arena = self.list_imprinter.imprint(arena)?;
-
-        // let lookup_table_size = Ptr::static_size() * self.item_types.len() as ::Ptr;
-        // let (lookup_table, right) = arena.noser_split(lookup_table_size)?;
-
-        // let mut item_ptr = self.list_imprinter.result_size() + lookup_table_size;
         let cell = Cell::new(arena);
 
-        // for (kind, chunk) in self
-        //     .item_types
-        //     .iter()
-        //     .zip(lookup_table.chunks_mut(Ptr::static_size() as usize))
-        // {
-        //     let kind_size = kind.result_size();
-        //     item_ptr = item_ptr
-        //         .checked_add(kind_size)
-        //         .ok_or(::NoserError::IntegerOverflow)?;
-
-        //     Ptr::write(chunk, item_ptr);
         for kind in self.item_types {
             let (left, right) = cell.take().noser_split(kind.result_size())?;
             kind.imprint(left)?;
@@ -308,22 +309,15 @@ mod tests {
             .create_buffer()
             .unwrap();
 
-        let mut owned: List<'_, Literal<'_, u8>> = List::create(&mut arena).unwrap();
-        get!(owned, 0, |mut item| {
-            item.write(10);
-        });
+        let owned: List<'_, Literal<'_, u8>> = List::create(&mut arena).unwrap();
+        let mut item = get! { owned[0] };
+        item.write(10);
 
-        get!(owned, 9, |mut item| {
-            item.write(11);
-        });
+        let mut item2 = get! { owned[9] };
+        item2.write(11);
 
-        owned.borrow(0, |item| {
-            assert_eq!(item.read(), 10);
-        });
-
-        owned.borrow(9, |item| {
-            assert_eq!(item.read(), 11);
-        });
+        assert_eq!(owned.borrow(0).read(), 10);
+        assert_eq!(owned.borrow(9).read(), 11);
     }
 
     #[test]
@@ -331,34 +325,20 @@ mod tests {
         let mut arena = List::from(&[
             List::<Literal<'_, u8>>::with_capacity(2),
             List::<Literal<'_, u8>>::with_capacity(2),
-        ]).create_buffer()
+        ])
+        .create_buffer()
         .unwrap();
 
-        let mut owned: List<'_, List<'_, Literal<'_, u8>>> = List::create(&mut arena).unwrap();
+        let owned: List<'_, List<'_, Literal<'_, u8>>> = List::create(&mut arena).unwrap();
 
-        get!(owned, 0, |mut sublist| {
-            get!(sublist, 0, |mut item| {
-                item.write(10);
-            });
-        });
+        let mut item = get! { owned[0][0] };
+        item.write(10);
 
-        get!(owned, 1, |mut sublist| {
-            get!(sublist, 0, |mut item| {
-                item.write(12);
-            });
-        });
+        let mut item = get! { owned[1][0] };
+        item.write(12);
 
-        owned.borrow(0, |sublist| {
-            sublist.borrow(0, |item| {
-                assert_eq!(item.read(), 10);
-            });
-        });
-
-        owned.borrow(1, |sublist| {
-            sublist.borrow(0, |item| {
-                assert_eq!(item.read(), 12);
-            });
-        });
+        assert_eq!(owned.borrow(0).borrow(0).read(), 10);
+        assert_eq!(owned.borrow(1).borrow(0).read(), 12);
     }
 
     #[test]
@@ -367,7 +347,8 @@ mod tests {
             List::<Literal<'_, u8>>::with_capacity(5),
             List::<Literal<'_, u8>>::with_capacity(5),
             List::<Literal<'_, u8>>::with_capacity(5),
-        ]).create_buffer()
+        ])
+        .create_buffer()
         .unwrap();
 
         let undersized = &mut arena[..23];
@@ -378,7 +359,8 @@ mod tests {
                 List::<Literal<'_, u8>>::with_capacity(5),
                 List::<Literal<'_, u8>>::with_capacity(5),
                 List::<Literal<'_, u8>>::with_capacity(5),
-            ]).imprint(undersized),
+            ])
+            .imprint(undersized),
         );
 
         results.push(List::<List<'_, Literal<'_, u8>>>::create(undersized).map(|_| ()));
@@ -393,11 +375,12 @@ mod tests {
         let mut arena = List::from(&[
             List::<Literal<'_, u8>>::with_capacity(2),
             List::<Literal<'_, u8>>::with_capacity(2),
-        ]).create_buffer()
+        ])
+        .create_buffer()
         .unwrap();
 
         let owned = List::<List<'_, Literal<'_, u8>>>::create(&mut arena).unwrap();
-        owned.borrow(2, |_| {});
+        owned.borrow(2);
     }
 
     #[test]
@@ -405,11 +388,12 @@ mod tests {
         let mut arena = List::from(&[
             List::<Literal<'_, u8>>::with_capacity(2),
             List::<Literal<'_, u8>>::with_capacity(2),
-        ]).create_buffer()
+        ])
+        .create_buffer()
         .unwrap();
 
         let owned = List::<List<'_, Literal<'_, u8>>>::create(&mut arena).unwrap();
-        owned.borrow(1, |_| {});
+        owned.borrow(1);
     }
 
     #[test]
@@ -420,7 +404,7 @@ mod tests {
             .unwrap();
 
         let owned = List::<Literal<'_, u8>>::create(&mut arena).unwrap();
-        owned.borrow(50, |_| {});
+        owned.borrow(50);
     }
 
     #[test]
@@ -430,6 +414,6 @@ mod tests {
             .unwrap();
 
         let owned = List::<Literal<'_, u8>>::create(&mut arena).unwrap();
-        owned.borrow(49, |_| {});
+        owned.borrow(49);
     }
 }

@@ -5,17 +5,15 @@
 // &self -> &mut [u8] -> T on List as rust cannot borrow &self and &mut self.buffer
 // simultaneously even though they are disjoint. Therefore we need a field builder,
 // we can then use a macro that disjointly borrows &self.builder and &mut self.buffer.
-// Use mem::transmute to shorten invariant lifetime?
+// NOTE: Use mem::transmute to shorten invariant lifetime?
 #[macro_export]
 macro_rules! get {
-    ($this:expr, $idx:expr, $cb:expr) => {{
-        // To get lint hints about self's mutability
-        let ref mut this = $this;
-
-        // To avoid manually typing the callback's input type
-        let cb = this.coerce($cb);
-
-        cb(this.inner.get(this.arena, $idx));
+    ($self_:ident[$idx:expr]) => {
+        $self_.inner.get($self_.arena, $idx)
+    };
+    ($self_:ident[$idx:expr]$([$idxs:expr]) +) => {{
+        let sublist = get! { $self_[$idx] };
+        get! { sublist$([$idxs])* }
     }};
 }
 
@@ -32,11 +30,6 @@ pub enum NoserError {
     Undersized(usize, Vec<u8>),
     IntegerOverflow,
 }
-
-// fn nth<T: traits::StaticSize>(idx: usize) -> ::std::ops::Range<usize> {
-//     let start = idx * T::size() as usize;
-//     (start..(start + T::size() as usize))
-// }
 
 pub type Result<T> = ::std::result::Result<T, NoserError>;
 

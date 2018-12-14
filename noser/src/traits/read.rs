@@ -1,14 +1,17 @@
 use crate::traits::size::{Sizable, Static};
 
-pub trait Read<'a> {
+pub trait Read<'r> {
     type Output;
 
-    fn read(_: &'a [u8]) -> Self::Output;
+    fn read<'a>(_: &'a [u8]) -> Self::Output
+    where
+        'a: 'r;
 
     #[inline]
-    fn read_safe(arena: &'a [u8]) -> Result<Self::Output, crate::NoserError>
+    fn read_safe<'a>(arena: &'a [u8]) -> Result<Self::Output, crate::NoserError>
     where
         Self: Sizable<Strategy = Static>,
+        'a: 'r,
     {
         let len = Self::static_size() as usize;
 

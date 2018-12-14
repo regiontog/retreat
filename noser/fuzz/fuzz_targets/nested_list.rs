@@ -11,13 +11,11 @@ fuzz_target!(|data: &[u8]| {
 
     if let Ok(list) = List::<List<Literal<char>>>::create(&mut data) {
         for i in 0..list.capacity() {
-            list.borrow(i, |sublist| {
-                for j in 0..sublist.capacity() {
-                    sublist.borrow(j, |item| {
-                        item.read();
-                    });
-                }
-            });
+            let sublist = list.borrow(i);
+
+            for j in 0..sublist.capacity() {
+                sublist.borrow(j).read();
+            }
         }
     }
 });
