@@ -3,9 +3,7 @@ pub fn write_var_len_int(buffer: &mut [u8], len: usize, int: u64) {
     const U64LEN: usize = ::std::mem::size_of::<u64>();
     let int = unsafe { ::std::mem::transmute::<u64, [u8; U64LEN]>(int.to_le()) };
 
-    for i in 0..len {
-        buffer[i] = int[i];
-    }
+    buffer[..len].clone_from_slice(&int[..len]);
 }
 
 #[inline]
@@ -13,9 +11,7 @@ pub fn read_var_len_int(buffer: &[u8], len: usize) -> u64 {
     const U64LEN: usize = ::std::mem::size_of::<u64>();
     let mut int = [0; U64LEN];
 
-    for i in 0..len {
-        int[i] = buffer[i];
-    }
+    int[..len].clone_from_slice(&buffer[..len]);
 
     u64::from_le(unsafe { ::std::mem::transmute::<[u8; U64LEN], u64>(int) })
 }

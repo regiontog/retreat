@@ -1,5 +1,5 @@
-use crate::ext::SliceExt;
-use crate::traits::{size::ReadReturn, Build, Read, Sizable, Write};
+use crate::prelude::SliceExt;
+use crate::traits::{size::ReadReturn, Build, Read, Sizable, Write, WriteTypeInfo};
 
 use std::marker::PhantomData;
 
@@ -49,14 +49,22 @@ where
     T: Sizable,
 {
     #[inline]
-    unsafe fn unchecked_build<'a>(arena: &'a mut [u8]) -> Self
+    unsafe fn unchecked_build<'a>(arena: &'a mut [u8]) -> (&'a mut [u8], Self)
     where
         'a: 'l,
     {
-        Literal {
-            arena: arena,
-            phantom: PhantomData,
-        }
+        let size = T::read_size(arena).expect(
+            "unchecked build needs to ensure the arena is correct before calling this method!",
+        );
+
+        let (left, right) = arena.split_at_mut(size as usize);
+        (
+            right,
+            Literal {
+                arena: left,
+                phantom: PhantomData,
+            },
+        )
     }
 
     #[inline]
@@ -74,6 +82,32 @@ where
                 phantom: PhantomData,
             },
         ))
+    }
+}
+
+pub struct LitImprinter;
+
+impl<T> WriteTypeInfo<Literal<'_, T>> for LitImprinter
+where
+    for<'t> &'t WriteTypeInfo<T>: Default,
+{
+    fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
+        <&WriteTypeInfo<T>>::default().imprint(arena)
+    }
+
+    fn result_size(&self) -> crate::Ptr {
+        <&WriteTypeInfo<T>>::default().result_size()
+    }
+}
+
+pub static LIT_IMPRINTER: LitImprinter = LitImprinter {};
+
+impl<T> Default for &WriteTypeInfo<Literal<'_, T>>
+where
+    for<'t> &'t WriteTypeInfo<T>: Default,
+{
+    fn default() -> Self {
+        &LIT_IMPRINTER
     }
 }
 

@@ -39,7 +39,10 @@ pub trait Sizable {
         let size = Self::read_size(arena).map_err(Into::into)?;
 
         if arena.len() < size as usize {
-            return Err(crate::NoserError::Undersized(size as usize, arena.to_owned()));
+            return Err(crate::NoserError::Undersized(
+                size as usize,
+                arena.to_owned(),
+            ));
         }
 
         Ok(size)

@@ -1,11 +1,10 @@
-use crate::ext::SliceExt;
+use crate::prelude::SliceExt;
 use crate::traits::{
     size::{Dynamic, SizeKind, Static},
-    Build, Imprinter, Read, Sizable, Write,
+    Build, Read, Sizable, Write, WriteTypeInfo,
 };
 use crate::Ptr;
 
-use std::cell::Cell;
 use std::marker::PhantomData;
 
 pub type ListLen = u32;
@@ -23,10 +22,11 @@ pub struct List<'l, T> {
     pub arena: &'l mut [u8],
 }
 
-pub struct DynamicItemListImprinter<'a, A: Imprinter> {
+pub struct DynamicItemListImprinter<'a, 'b, T, W: WriteTypeInfo<T>> {
     list_imprinter: ListImprinter,
-    item_types: &'a [A],
+    item_types: &'a [&'b W],
     items_sum_size: Ptr,
+    phantom: PhantomData<T>,
 }
 
 pub struct StaticItemListImprinter<A> {
@@ -38,24 +38,6 @@ struct ListImprinter {
     capacity: ListLen,
 }
 
-struct Ref<T> {
-    inner: T,
-}
-
-impl<T> Ref<T> {
-    fn new(value: T) -> Self {
-        Ref { inner: value }
-    }
-}
-
-impl<T> std::ops::Deref for Ref<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.inner
-    }
-}
-
 impl<T> CovariantList<T> {
     #[inline]
     pub fn get<'a, 't>(&self, arena: &'a mut [u8], idx: ListLen) -> T
@@ -63,7 +45,7 @@ impl<T> CovariantList<T> {
         T: Sizable + Build<'t>,
         'a: 't,
     {
-        unsafe { T::unchecked_build(self.item_slice(arena, idx)) }
+        unsafe { T::unchecked_create(self.item_slice(arena, idx)) }
     }
 
     #[inline]
@@ -72,6 +54,8 @@ impl<T> CovariantList<T> {
         T: Sizable,
     {
         assert!(idx < self.capacity);
+
+        // let arena = &mut arena[LIST_LEN_SIZE as usize..];
 
         match T::size() {
             SizeKind::Exactly(size) => &mut arena[idx as usize * size as usize..],
@@ -124,27 +108,28 @@ impl<T> List<'_, T> {
         T: Sizable + Build<'t>,
         's: 't,
     {
-        Ref::new(unsafe { self.get_from_imut(idx) })
+        freyr::utils::ReadOnly::new(unsafe { self.get_from_imut(idx) })
     }
 
     #[inline]
-    pub fn from<'b>(item_types: &'b [T]) -> DynamicItemListImprinter<'b, T>
+    pub fn from<'a, 'b, W>(item_types: &'a [&'b W]) -> DynamicItemListImprinter<'a, 'b, T, W>
     where
-        T: Imprinter,
+        W: WriteTypeInfo<T>,
     {
         DynamicItemListImprinter {
             list_imprinter: ListImprinter {
                 capacity: item_types.len() as ListLen,
             },
             items_sum_size: item_types.iter().map(|item| item.result_size()).sum(),
-            item_types: item_types,
+            item_types,
+            phantom: PhantomData,
         }
     }
 
     #[inline]
     pub fn with_capacity(capacity: ListLen) -> StaticItemListImprinter<T> {
         StaticItemListImprinter {
-            list_imprinter: ListImprinter { capacity: capacity },
+            list_imprinter: ListImprinter { capacity },
             phantom: PhantomData,
         }
     }
@@ -152,22 +137,29 @@ impl<T> List<'_, T> {
 
 impl<'l, T> Build<'l> for List<'l, T>
 where
-    T: Sizable,
+    T: Sizable + Build<'l>,
 {
     #[inline]
-    unsafe fn unchecked_build<'a>(arena: &'a mut [u8]) -> Self
+    unsafe fn unchecked_build<'a>(arena: &'a mut [u8]) -> (&'a mut [u8], Self)
     where
         'a: 'l,
     {
         let capacity = ListLen::read(arena);
+        let size = Self::read_size(arena).expect(
+            "unchecked build needs to ensure the arena is correct before calling this method!",
+        );
 
-        List {
-            arena: &mut arena[LIST_LEN_SIZE as usize..],
-            inner: CovariantList {
-                capacity,
-                phantom: PhantomData,
+        let (left, right) = arena.split_at_mut(size as usize);
+        (
+            right,
+            List {
+                arena: &mut left[LIST_LEN_SIZE as usize..],
+                inner: CovariantList {
+                    capacity,
+                    phantom: PhantomData,
+                },
             },
-        }
+        )
     }
 
     #[inline]
@@ -179,24 +171,27 @@ where
         let (left, arena) = arena.noser_split(LIST_LEN_SIZE)?;
         let capacity = ListLen::read(left);
 
-        let mut running_size: Ptr = 0;
-
-        {
+        let unused = {
             // The rest is the arena of this list
+            let mut arena = &arena[..];
 
-            // Figure out the length of each element and write it to the lookup table,
-            // as we could panic if the lookup table received is invalid.
-            // Also return Err if arena is undersized here instead of in get's.
-
-            for _ in 0..capacity as usize {
-                let size = T::in_bounds(&arena[running_size as usize..])?;
-                running_size = running_size
-                    .checked_add(size)
-                    .ok_or(crate::NoserError::IntegerOverflow)?;
+            // println!("{:?}", capacity);
+            for _ in 0..capacity {
+                // println!("i: {:?}", arena);
+                arena = T::unused(arena)?;
             }
-        }
 
-        let (arena, right) = arena.noser_split(running_size)?;
+            arena.len()
+        };
+
+        // println!("o: {:?}", unused);
+        // println!("o: {:?}", arena);
+
+        // It's important this does not panic, we know it won't since arena.len() - unused
+        // is always smaller than arena.len() furthermore unused is never going to exceed
+        // arena.len() so the result is always positive as well.
+        let (arena, right) = arena.split_at_mut(arena.len() - unused);
+        // println!("o: {:?} {:?}", arena, right);
 
         Ok((
             right,
@@ -230,7 +225,11 @@ where
                 let mut read_head = ListLen::static_size();
 
                 for _ in 0..capacity {
-                    read_head += T::read_size(&arena[read_head as usize..]).map_err(Into::into)?;
+                    read_head = read_head
+                        .checked_add(
+                            T::read_size(&arena[read_head as usize..]).map_err(Into::into)?,
+                        )
+                        .ok_or(crate::NoserError::IntegerOverflow)?;
                 }
 
                 Ok(read_head)
@@ -250,7 +249,8 @@ impl ListImprinter {
     }
 }
 
-impl<A> Imprinter for StaticItemListImprinter<A>
+// TODO: Rewrite to use Default WriteTypeInfo somehow? Problem with other crate's custom WriteTypeInfo?
+impl<A> WriteTypeInfo<List<'_, A>> for StaticItemListImprinter<A>
 where
     A: Sizable<Strategy = Static>,
 {
@@ -273,19 +273,18 @@ where
     }
 }
 
-impl<A> Imprinter for DynamicItemListImprinter<'_, A>
+impl<W, T> WriteTypeInfo<List<'_, T>> for DynamicItemListImprinter<'_, '_, T, W>
 where
-    A: Imprinter,
+    W: WriteTypeInfo<T>,
 {
     #[inline]
     fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
-        let arena = self.list_imprinter.imprint(arena)?;
-        let cell = Cell::new(arena);
+        let mut arena = self.list_imprinter.imprint(arena)?;
 
         for kind in self.item_types {
-            let (left, right) = cell.take().noser_split(kind.result_size())?;
+            let (left, right) = arena.noser_split(kind.result_size())?;
             kind.imprint(left)?;
-            cell.set(right);
+            arena = right;
         }
 
         Ok(())
@@ -300,7 +299,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::Imprinter;
+    use crate::traits::WriteTypeInfo;
     use crate::Literal;
 
     #[test]
@@ -323,8 +322,8 @@ mod tests {
     #[test]
     fn nested_list() {
         let mut arena = List::from(&[
-            List::<Literal<'_, u8>>::with_capacity(2),
-            List::<Literal<'_, u8>>::with_capacity(2),
+            &List::<Literal<'_, u8>>::with_capacity(2),
+            &List::<Literal<'_, u8>>::with_capacity(2),
         ])
         .create_buffer()
         .unwrap();
@@ -344,9 +343,9 @@ mod tests {
     #[test]
     fn undersized_arena() {
         let mut arena = List::from(&[
-            List::<Literal<'_, u8>>::with_capacity(5),
-            List::<Literal<'_, u8>>::with_capacity(5),
-            List::<Literal<'_, u8>>::with_capacity(5),
+            &List::<Literal<'_, u8>>::with_capacity(5),
+            &List::<Literal<'_, u8>>::with_capacity(5),
+            &List::<Literal<'_, u8>>::with_capacity(5),
         ])
         .create_buffer()
         .unwrap();
@@ -356,16 +355,15 @@ mod tests {
         let mut results = vec![];
         results.push(
             List::from(&[
-                List::<Literal<'_, u8>>::with_capacity(5),
-                List::<Literal<'_, u8>>::with_capacity(5),
-                List::<Literal<'_, u8>>::with_capacity(5),
+                &List::<Literal<'_, u8>>::with_capacity(5),
+                &List::<Literal<'_, u8>>::with_capacity(5),
+                &List::<Literal<'_, u8>>::with_capacity(5),
             ])
             .imprint(undersized),
         );
 
         results.push(List::<List<'_, Literal<'_, u8>>>::create(undersized).map(|_| ()));
 
-        println!("{:?}", results);
         assert!(results.into_iter().all(|r| r.is_err()));
     }
 
@@ -373,8 +371,8 @@ mod tests {
     #[should_panic]
     fn out_of_bounds_list() {
         let mut arena = List::from(&[
-            List::<Literal<'_, u8>>::with_capacity(2),
-            List::<Literal<'_, u8>>::with_capacity(2),
+            &List::<Literal<'_, u8>>::with_capacity(2),
+            &List::<Literal<'_, u8>>::with_capacity(2),
         ])
         .create_buffer()
         .unwrap();
@@ -386,8 +384,8 @@ mod tests {
     #[test]
     fn in_bounds_list() {
         let mut arena = List::from(&[
-            List::<Literal<'_, u8>>::with_capacity(2),
-            List::<Literal<'_, u8>>::with_capacity(2),
+            &List::<Literal<'_, u8>>::with_capacity(2),
+            &List::<Literal<'_, u8>>::with_capacity(2),
         ])
         .create_buffer()
         .unwrap();

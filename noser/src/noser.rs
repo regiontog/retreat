@@ -1,4 +1,4 @@
-// #![feature(test, never_type, cell_update)]
+#![deny(clippy::all)]
 
 // We cannot have a method &mut self -> T on List as &mut Self is invariant on Self.
 // As such T's lifetime cannot be narrowed. We also cannot have a method
@@ -17,6 +17,37 @@ macro_rules! get {
     }};
 }
 
+#[macro_export]
+macro_rules! crate_local_type_writer {
+    () => {
+        crate_local_type_writer!(WriteTypeInfo);
+    };
+    ($name:ident) => {
+        struct $name<'a, T>(&'a ::noser::traits::WriteTypeInfo<T>);
+
+        impl<T> ::noser::traits::WriteTypeInfo<T> for $name<'_, T> {
+            #[inline]
+            fn imprint(&self, arena: &mut [u8]) -> ::noser::Result<()> {
+                self.0.imprint(arena)
+            }
+
+            #[inline]
+            fn result_size(&self) -> ::noser::Ptr {
+                self.0.result_size()
+            }
+        }
+
+        impl<'a, T> $name<'a, T>
+        where
+            &'a ::noser::traits::WriteTypeInfo<T>: Default,
+        {
+            fn default() -> $name<'a, T> {
+                $name(<&'a ::noser::traits::WriteTypeInfo<T>>::default())
+            }
+        }
+    };
+}
+
 pub type Ptr = u32;
 pub const PTR_SIZE: Ptr = ::std::mem::size_of::<Ptr>() as Ptr;
 
@@ -29,13 +60,15 @@ pub use crate::implementation::*;
 pub enum NoserError {
     Undersized(usize, Vec<u8>),
     IntegerOverflow,
+    Malformed,
 }
 
 pub type Result<T> = ::std::result::Result<T, NoserError>;
 
-mod ext {
+pub mod prelude {
     pub trait SliceExt {
         fn noser_split(&mut self, at: crate::Ptr) -> crate::Result<(&mut Self, &mut Self)>;
+        fn noser_split_imut(&self, at: crate::Ptr) -> crate::Result<(&Self, &Self)>;
     }
 
     impl SliceExt for [u8] {
@@ -48,6 +81,17 @@ mod ext {
             }
 
             Ok(self.split_at_mut(at))
+        }
+
+        #[inline]
+        fn noser_split_imut(&self, at: crate::Ptr) -> crate::Result<(&[u8], &[u8])> {
+            let at = at as usize;
+
+            if self.len() < at {
+                return Err(crate::NoserError::Undersized(at, self.to_vec()));
+            }
+
+            Ok(self.split_at(at))
         }
     }
 }

@@ -2,11 +2,19 @@
 name = "noserc"
 version = "0.1.0"
 authors = ["Erlend Tobiassen <erlentob@stud.ntnu.no>"]
+edition = "2018"
 
 [lib]
 name = "noserc"
 path = "src/noserc.rs"
+proc-macro = true
 
 [dependencies]
-nom = "4.0.0"
-codegen = { git = "https://github.com/carllerche/codegen" }
+syn = "0.15.0"
+heck = "0.3"
+quote = "0.6"
+proc-macro2 = "0.4"
+freyr = { path = "../freyr" }
+
+[dev-dependencies]
+noser = { path = "../noser" }

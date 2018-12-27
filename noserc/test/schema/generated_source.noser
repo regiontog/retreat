@@ -1,4 +1,0 @@
-struct TestStruct<'arena> {
-	field_x: Literal<'arena, u8>
-	field_y: List<Literal<'arena, u8>>
-}

@@ -1,189 +1,219 @@
-#[macro_use]
-extern crate nom;
-extern crate codegen;
+#![deny(clippy::all)]
+#![recursion_limit = "256"]
+extern crate proc_macro;
 
-mod parsing;
-mod types;
+use proc_macro2::TokenStream;
+use quote::quote;
+use quote::ToTokens;
+use syn::{parse_macro_input, parse_quote, DeriveInput};
 
-use std::env;
-use std::fs;
-use std::fs::File;
-use std::io::prelude::*;
-use std::path::Path;
+mod build;
+mod imprinter;
+mod size;
 
-use parsing::common::{eof, whitespace0, whitespace0_complete};
-use parsing::datastructures::ScopeMutater;
-use parsing::structure::struct_type;
-use parsing::union::union_type;
+type DeriveResult = Result<TokenStream, syn::Error>;
 
-named!(pp<&str,Vec<ScopeMutater>>, delimited!(
-    whitespace0,
-    separated_nonempty_list!(
-        whitespace0_complete,
-        complete!(alt!(struct_type | union_type))
-    ),
-    pair!(whitespace0_complete, eof)
-));
-
-pub fn noser_parser<'a>(
-    input: &'a str,
-    options: &CompilerOptions,
-) -> nom::IResult<&'a str, String> {
-    let (s, mutators) = pp(input)?;
-    let mut scope = codegen::Scope::new();
-
-    for mutator in mutators {
-        mutator(options, &mut scope);
-    }
-
-    Ok((s, scope.to_string()))
+fn unwrap(expanded: syn::Result<proc_macro2::TokenStream>) -> proc_macro::TokenStream {
+    proc_macro::TokenStream::from(expanded.unwrap_or_else(|e| syn::Error::to_compile_error(&e)))
 }
 
-pub struct CompilerOptions<'a> {
-    noser_path: &'a str,
+#[proc_macro_derive(Build, attributes(noserc))]
+pub fn derive_build(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    unwrap(build::derive(input))
 }
 
-impl<'a> CompilerOptions<'a> {
-    fn defaults() -> CompilerOptions<'a> {
-        CompilerOptions {
-            noser_path: "::noser",
-        }
-    }
+#[proc_macro_derive(WriteTypeInfo)]
+pub fn derive_imprinter(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    //TODO: Option for specifying crate local WriteTypeInfo struct.
+    unwrap(imprinter::derive(input))
 }
 
-pub struct NoserCompiler<'a> {
-    prefix: &'a str,
-    options: CompilerOptions<'a>,
-    base: Option<&'a str>,
-    files: Vec<&'a str>,
+#[proc_macro_derive(SizableStatic)]
+pub fn derive_size_static(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    unwrap(size::derive_static(input))
 }
 
-impl<'a> NoserCompiler<'a> {
-    pub fn new() -> NoserCompiler<'a> {
-        NoserCompiler {
-            prefix: "",
-            base: None,
-            files: Vec::new(),
-            options: CompilerOptions::defaults(),
-        }
-    }
+#[proc_macro_derive(SizableDynamic)]
+pub fn derive_size_dynamic(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
 
-    pub fn out_dir(mut self, base: &'a str) -> Self {
-        self.base = Some(base);
-        self
-    }
-
-    pub fn remove_prefix(mut self, prefix: &'a str) -> Self {
-        self.prefix = prefix;
-        self
-    }
-
-    pub fn noser_path(mut self, path: &'a str) -> Self {
-        self.options.noser_path = path;
-        self
-    }
-
-    pub fn file(mut self, prefix: &'a str) -> Self {
-        self.files.push(prefix);
-        self
-    }
-
-    pub fn run(self) -> Result<(), NoserError<String>> {
-        let prefix_path = Path::new(self.prefix);
-        let base_str = match self.base {
-            None => env::var("OUT_DIR")?,
-            Some(base) => base.to_string(),
-        };
-
-        let base = Path::new(&base_str);
-
-        let mut buffer = String::with_capacity(1024);
-
-        for file_handle in self.files.iter() {
-            let mut file = File::open(file_handle)?;
-            file.read_to_string(&mut buffer)?;
-
-            let (_, result) = noser_parser(&buffer, &self.options)?;
-            buffer.truncate(0);
-
-            let mut out_path = base.join(
-                Path::new(file_handle)
-                    .strip_prefix(prefix_path)?
-                    .with_extension("rs"),
-            );
-
-            fs::create_dir_all(
-                &out_path
-                    .parent()
-                    .ok_or(NoserError::InvalidPath(out_path.to_owned()))?,
-            )?;
-
-            File::create(out_path)?.write_all(result.as_bytes())?;
-        }
-
-        Ok(())
-    }
+    unwrap(size::derive_dynamic(input))
 }
 
-#[derive(Debug)]
-pub enum NoserError<I> {
-    IOError(std::io::Error),
-    ParserError(NomError<I>),
-    PrefixError(std::path::StripPrefixError),
-    EnvironmentVariableError(std::env::VarError),
-    InvalidPath(std::path::PathBuf),
+//TODO: Special derive for static enums! (They need special versions
+// of Build/WriteTypeInfo that reserves space for the longest variant) Also
+// figure out how to swap variant variant in place. Otherwise this version of
+// enum's are strictly worse than the dynamic kind
+
+struct Options {
+    arena: Option<syn::LifetimeDef>,
 }
 
-#[derive(Debug)]
-pub enum NomError<I, E = u32> {
-    Incomplete(nom::Needed),
-    Error(NomContext<I, E>),
-    Failure(NomContext<I, E>),
-}
+impl Options {
+    fn from(attrs: &[syn::Attribute]) -> Result<Self, syn::Error> {
+        use freyr::prelude::ResultPrelude;
 
-#[derive(Debug)]
-pub enum NomContext<I, E = u32> {
-    Code(I, nom::ErrorKind<E>),
-}
+        let attrs: syn::Result<Vec<_>> = attrs
+            .iter()
+            .filter(|attr| validate_path(&attr.path))
+            .filter_map(|attr| {
+                attr.parse_meta()
+                    .map(|meta| match meta {
+                        syn::Meta::List(ml) => Some(Ok(ml.nested)),
+                        _ => None,
+                    })
+                    .unwrap_or_else(|e| Some(Err(e)))
+            })
+            .flat_map(|result_of_iter| {
+                result_of_iter
+                    .map(|punctuated| punctuated.into_iter())
+                    .flip_inner_iter()
+            })
+            .collect();
 
-impl<I1, I2> From<nom::Err<I1>> for NoserError<I2>
-where
-    I2: From<I1>,
-{
-    fn from(error: nom::Err<I1>) -> NoserError<I2> {
-        NoserError::ParserError(match error {
-            nom::Err::Incomplete(needed) => NomError::Incomplete(needed),
-            nom::Err::Error(context) => NomError::Error(From::from(context)),
-            nom::Err::Failure(context) => NomError::Failure(From::from(context)),
+        let attrs = attrs?;
+
+        let arena: syn::Ident = parse_quote!(arena);
+
+        Ok(Options {
+            arena: match attrs
+                .iter()
+                .filter_map(|nested| match nested {
+                    syn::NestedMeta::Meta(syn::Meta::NameValue(nv)) if nv.ident == arena => {
+                        match &nv.lit {
+                            syn::Lit::Str(s) => Some(s.parse()),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                })
+                .next()
+            {
+                Some(result) => Some(result?),
+                None => None,
+            },
         })
     }
+
+    fn arena_generics(&self, generics: &syn::Generics) -> syn::LifetimeDef {
+        self.arena
+            .clone()
+            .or_else(|| {
+                generics
+                    .params
+                    .iter()
+                    .filter_map(|param| match param {
+                        syn::GenericParam::Lifetime(ft) => Some(ft),
+                        _ => None,
+                    })
+                    .next()
+                    .cloned()
+            })
+            .unwrap_or_else(|| parse_quote!('arena))
+    }
 }
 
-impl<I1, I2> From<nom::Context<I1>> for NomContext<I2>
-where
-    I2: From<I1>,
-{
-    fn from(from: nom::Context<I1>) -> NomContext<I2> {
-        match from {
-            nom::Context::Code(i, e) => NomContext::Code(From::from(i), e),
+fn validate_path(path: &syn::Path) -> bool {
+    let noserc: syn::Ident = parse_quote!(noserc);
+
+    path.segments.len() == 1
+        && path.segments[0].arguments.is_empty()
+        && path.segments[0].ident == noserc
+}
+
+fn split_for_impl_add(
+    generics: &mut syn::Generics,
+    lifetime: &syn::LifetimeDef,
+) -> (
+    proc_macro2::TokenStream,
+    proc_macro2::TokenStream,
+    proc_macro2::TokenStream,
+) {
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let ty_generics = ty_generics.into_token_stream();
+    let where_clause = where_clause.into_token_stream();
+
+    let impl_generics = if generics
+        .lifetimes()
+        .find(|lt| lt.lifetime == lifetime.lifetime)
+        .is_none()
+    {
+        generics
+            .params
+            .push(syn::GenericParam::Lifetime(lifetime.clone()));
+        let (impl_generics, _, _) = generics.split_for_impl();
+        impl_generics
+    } else {
+        impl_generics
+    };
+
+    (impl_generics.into_token_stream(), ty_generics, where_clause)
+}
+
+#[allow(clippy::needless_lifetimes)]
+pub(crate) fn build_from_fields<'a>(
+    ty: &proc_macro2::TokenStream,
+    fields: &'a syn::Fields,
+    body: impl FnOnce(
+        Box<dyn Iterator<Item = syn::Ident> + 'a>,
+        Box<dyn Iterator<Item = &syn::Type> + 'a>,
+    ) -> proc_macro2::TokenStream,
+    ret: impl FnOnce(proc_macro2::TokenStream) -> proc_macro2::TokenStream,
+) -> proc_macro2::TokenStream {
+    let types = fields.iter().map(|f| &f.ty);
+
+    match &fields {
+        syn::Fields::Unit => {
+            let body = body(Box::new(std::iter::empty()), Box::new(std::iter::empty()));
+            let ret = ret(quote! {
+                #ty
+            });
+            quote! {
+                #body
+                #ret
+            }
         }
-    }
-}
+        syn::Fields::Named(fields) => {
+            let fields1 = fields
+                .named
+                .iter()
+                .map(|f| f.ident.as_ref().unwrap().clone());
+            let fields2 = fields
+                .named
+                .iter()
+                .map(|f| f.ident.as_ref().unwrap().clone());
 
-impl<I> From<std::path::StripPrefixError> for NoserError<I> {
-    fn from(error: std::path::StripPrefixError) -> NoserError<I> {
-        NoserError::PrefixError(error)
-    }
-}
+            let body = body(Box::new(fields1), Box::new(types));
+            let ret = ret(quote!(#ty {
+                #(#fields2,)*
+            }));
 
-impl<I> From<std::io::Error> for NoserError<I> {
-    fn from(error: std::io::Error) -> NoserError<I> {
-        NoserError::IOError(error)
-    }
-}
+            quote! {
+                #body
+                #ret
+            }
+        }
+        syn::Fields::Unnamed(fields) => {
+            let fields1 = (0..fields.unnamed.len())
+                .map(|i| syn::Ident::new(&format!("field{}", i), proc_macro2::Span::call_site()));
+            let fields2 = fields1.clone();
 
-impl<I> From<std::env::VarError> for NoserError<I> {
-    fn from(error: std::env::VarError) -> NoserError<I> {
-        NoserError::EnvironmentVariableError(error)
+            let body = body(Box::new(fields1), Box::new(types));
+            let ret = ret(quote! {
+                #ty(#(#fields2,)*)
+            });
+
+            quote! {
+                #body
+                #ret
+            }
+        }
     }
 }

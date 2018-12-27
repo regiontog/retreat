@@ -1,4 +1,4 @@
-pub trait Imprinter {
+pub trait WriteTypeInfo<T> {
     fn imprint(&self, arena: &mut [u8]) -> crate::Result<()>;
 
     fn result_size(&self) -> crate::Ptr;

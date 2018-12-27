@@ -30,7 +30,7 @@ fn list_write4(b: &mut Bencher) {
         .create_buffer()
         .unwrap();
 
-    let mut owned: List<'_, Literal<'_, u8>> = List::create(&mut arena).unwrap();
+    let owned: List<'_, Literal<'_, u8>> = List::create(&mut arena).unwrap();
     b.iter(|| {
         get!(owned[0]).write(10);
         get!(owned[9]).write(19);
@@ -45,7 +45,7 @@ fn list_read4(b: &mut Bencher) {
         .create_buffer()
         .unwrap();
 
-    let mut owned: List<'_, Literal<'_, u8>> = List::create(&mut arena).unwrap();
+    let owned: List<'_, Literal<'_, u8>> = List::create(&mut arena).unwrap();
 
     b.iter(|| {
         get!(owned[0]).read();
@@ -66,7 +66,7 @@ fn nested_list_write_value_in_4_sublists(b: &mut Bencher) {
     .create_buffer()
     .unwrap();
 
-    let mut owned: List<'_, List<'_, Literal<'_, u8>>> = List::create(&mut arena).unwrap();
+    let owned: List<'_, List<'_, Literal<'_, u8>>> = List::create(&mut arena).unwrap();
 
     b.iter(|| {
         get!(owned[0][0]).write(10);

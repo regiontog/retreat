@@ -1,4 +1,4 @@
-use crate::traits::Imprinter;
+use crate::traits::WriteTypeInfo;
 use std::mem;
 
 use crate::traits::{
@@ -15,7 +15,7 @@ macro_rules! impl_rw {
             pub struct ScalarImprinter;
         }
 
-        impl Imprinter for $imp_name::ScalarImprinter {
+        impl WriteTypeInfo<$ty> for $imp_name::ScalarImprinter {
             #[inline]
             fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
                 if arena.len() >= mem::size_of::<$ty>() {
@@ -32,7 +32,14 @@ macro_rules! impl_rw {
             }
         }
 
+
         pub static $imp_name: $imp_name::ScalarImprinter = $imp_name::ScalarImprinter {};
+
+        impl Default for &WriteTypeInfo<$ty> {
+            fn default() -> &'static WriteTypeInfo<$ty> {
+                &$imp_name
+            }
+        }
 
         impl Sizable for $ty {
             type Strategy = Static;
@@ -45,14 +52,15 @@ macro_rules! impl_rw {
     };
 }
 
-macro_rules! transmutable_without_endianness_tansform {
+macro_rules! transmutable_without_endianness_transform {
     ($imp_name:ident, $ty:ident) => {
         impl_rw!($imp_name, $ty,
             impl Write for $ty {
                 #[inline]
                 fn write(arena: &mut [u8], val: $ty) {
+                    #[allow(clippy::cast_ptr_alignment)]
                     let mut_ptr = (&mut arena[..mem::size_of::<$ty>()]).as_mut_ptr() as *mut $ty;
-                    unsafe { *mut_ptr = val }
+                    unsafe { std::ptr::write_unaligned(mut_ptr, val) }
                 }
             }
 
@@ -61,8 +69,9 @@ macro_rules! transmutable_without_endianness_tansform {
 
                 #[inline]
                 fn read<'a>(arena: &'a [u8]) -> $ty where 'a: 'r {
+                    #[allow(clippy::cast_ptr_alignment)]
                     let p = (&arena[..mem::size_of::<$ty>()]).as_ptr() as *const $ty;
-                    unsafe { *p }
+                    unsafe { std::ptr::read_unaligned(p) }
                 }
             }
         );
@@ -75,8 +84,9 @@ macro_rules! transmutable {
             impl Write for $ty {
                 #[inline]
                 fn write(arena: &mut [u8], val: $ty) {
+                    #[allow(clippy::cast_ptr_alignment)]
                     let mut_ptr = (&mut arena[..mem::size_of::<$ty>()]).as_mut_ptr() as *mut $ty;
-                    unsafe { *mut_ptr = val.to_le() }
+                    unsafe { std::ptr::write_unaligned(mut_ptr, val.to_le()) }
                 }
             }
 
@@ -85,8 +95,9 @@ macro_rules! transmutable {
 
                 #[inline]
                 fn read<'a>(arena: &'a [u8]) -> $ty where 'a: 'r {
+                    #[allow(clippy::cast_ptr_alignment)]
                     let p = (&arena[..mem::size_of::<$ty>()]).as_ptr() as *const $ty;
-                    $ty::from_le(unsafe { *p })
+                    $ty::from_le(unsafe { std::ptr::read_unaligned(p) })
                 }
             }
         );
@@ -111,8 +122,8 @@ impl_rw!(IMPRINT_U8, u8,
     }
 );
 
-transmutable_without_endianness_tansform!(IMPRINT_BOOL, bool);
-transmutable_without_endianness_tansform!(IMPRINT_I8, i8);
+transmutable_without_endianness_transform!(IMPRINT_BOOL, bool);
+transmutable_without_endianness_transform!(IMPRINT_I8, i8);
 
 transmutable!(IMPRINT_I16, i16);
 transmutable!(IMPRINT_U16, u16);
@@ -185,18 +196,18 @@ mod tests {
 
     #[test]
     fn rw_bool() {
-        let ref mut arena = [0; 1];
+        let arena = &mut [0; 1];
 
         bool::write(arena, true);
-        assert!(true == bool::read(arena));
+        assert!(bool::read(arena));
 
         bool::write(arena, false);
-        assert!(false == bool::read(arena));
+        assert!(!bool::read(arena));
     }
 
     #[test]
     fn rw_char() {
-        let ref mut arena = [0; 4];
+        let arena = &mut [0; 4];
 
         char::write(arena, '💯');
         assert!(Some('💯') == char::read(arena));
@@ -204,7 +215,7 @@ mod tests {
 
     #[test]
     fn rw_u8() {
-        let ref mut arena = [0; 1];
+        let arena = &mut [0; 1];
 
         u8::write(arena, 246);
         assert!(246 == u8::read(arena));
@@ -212,23 +223,24 @@ mod tests {
 
     #[test]
     fn rw_u32() {
-        let ref mut arena = [0; 10];
+        let arena = &mut [0; 10];
 
-        u32::write(arena, 3825345);
-        assert!(3825345 == u32::read(arena));
+        u32::write(arena, 3_825_345);
+        assert!(3_825_345 == u32::read(arena));
     }
 
     #[test]
     fn rw_u64() {
-        let ref mut arena = [0; 8];
+        let arena = &mut [0; 8];
 
         u64::write(arena, 246);
         assert!(246 == u64::read(arena));
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn rw_f32() {
-        let ref mut arena = [0; 10];
+        let arena = &mut [0; 10];
 
         f32::write(arena, ::std::f32::NAN);
         assert!(f32::read(arena).is_nan());
@@ -239,13 +251,14 @@ mod tests {
         f32::write(arena, ::std::f32::NEG_INFINITY);
         assert!(::std::f32::NEG_INFINITY == f32::read(arena));
 
-        f32::write(arena, 98452345.2384945);
-        assert!(98452345.2384945 == f32::read(arena));
+        f32::write(arena, 984_524.2);
+        assert!(984_524.2_f32 == f32::read(arena));
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn rw_f64() {
-        let ref mut arena = [0; 8];
+        let arena = &mut [0; 8];
 
         f64::write(arena, ::std::f64::NAN);
         assert!(f64::read(arena).is_nan());
@@ -256,7 +269,7 @@ mod tests {
         f64::write(arena, ::std::f64::NEG_INFINITY);
         assert!(::std::f64::NEG_INFINITY == f64::read(arena));
 
-        f64::write(arena, 98452345.2384945);
-        assert!(98452345.2384945 == f64::read(arena));
+        f64::write(arena, 98_452_345.238_494_5);
+        assert!(98_452_345.238_494_5 == f64::read(arena));
     }
 }

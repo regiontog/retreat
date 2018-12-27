@@ -3,7 +3,7 @@ use std::mem;
 use crate::traits::{size::Dynamic, Read, Sizable, Write};
 
 macro_rules! impl_slice_rw {
-    ($ty:ident, $($rw:tt)*) => {
+    ($ty:ident, { $($rw:tt)* }) => {
         $($rw)*
 
         impl<'a> Sizable for &'a [$ty] {
@@ -22,8 +22,7 @@ macro_rules! impl_slice_rw {
     };
 }
 
-impl_slice_rw!(
-    u8,
+impl_slice_rw!(u8, {
     impl<'a> Write for &'a [u8] {
         /// Performs a copy of each element in the slice.
         #[inline]
@@ -39,11 +38,12 @@ impl_slice_rw!(
             }
         }
     }
+
     impl<'r> Read<'r> for &'r [u8] {
         type Output = Self;
 
         #[inline]
-        /// Unsafe if reported length is larger than bytes in arena.
+        /// Panics if reported length is larger than bytes in arena.
         fn read<'a>(arena: &'a [u8]) -> Self
         where
             'a: 'r,
@@ -52,7 +52,7 @@ impl_slice_rw!(
             &arena[mem::size_of::<crate::Ptr>()..len + mem::size_of::<crate::Ptr>()]
         }
     }
-);
+});
 
 impl<'a> Write for &'a str {
     #[inline]
@@ -65,7 +65,10 @@ impl<'r> Read<'r> for &'r str {
     type Output = Result<Self, ::std::str::Utf8Error>;
 
     #[inline]
-    fn read<'a>(arena: &'a [u8]) -> Self::Output where 'a: 'r {
+    fn read<'a>(arena: &'a [u8]) -> Self::Output
+    where
+        'a: 'r,
+    {
         ::std::str::from_utf8(<&[u8]>::read(arena))
     }
 }
@@ -85,7 +88,7 @@ mod tests {
 
     #[test]
     fn rw_byte_slice() {
-        let ref mut arena = [0; 256];
+        let arena = &mut [0; 256];
 
         <&[u8]>::write(arena, &[10; 50]);
 
@@ -96,7 +99,7 @@ mod tests {
 
     #[test]
     fn rw_str_slice() {
-        let ref mut arena = [0; 256];
+        let arena = &mut [0; 256];
 
         <&str>::write(arena, "こんにちは");
         println!("{:?}", <&str>::read(arena));
