@@ -1,57 +1,52 @@
-pub trait Build<'b>: Sized {
-    /// This function must not mutate the arena even though it has a mut ref,
-    /// mutation is only allowed through the methods and members of Self.
-    /// This is because the mut ref may be a unsafe imut ref in order to
-    /// create a [ReadOnly<Self>](freyr::utils::ReadOnly<Self>).
-    fn build<'a>(_: &'a mut [u8]) -> Result<'a, Self>
+/// The build and unchecked_build functions must not mutate the arena even though it has a mut ref,
+/// mutation is only allowed through the methods and members of Self.
+/// This is because the MutRefInput may be unsafely converted from &Self::Input in order to
+/// create a [ReadOnly<Self>](freyr::utils::ReadOnly<Self>) or to find the unused portion of some Self::Input.
+pub unsafe trait Build<'a>: Sized {
+    fn build<'n>(_: &'n mut [u8]) -> crate::Result<(&'n mut [u8], Self)>
     where
-        'a: 'b;
+        'n: 'a;
 
-    /// This function must not mutate the arena even though it has a mut ref,
-    /// mutation is only allowed through the methods and members of Self.
-    /// This is because the mut ref may be a unsafe imut ref in order to
-    /// create a [ReadOnly<Self>](freyr::utils::ReadOnly<Self>).
-    unsafe fn unchecked_build<'a>(_: &'a mut [u8]) -> (&'a mut [u8], Self)
+    /// May panic
+    fn unchecked_build<'n>(_: &'n mut [u8]) -> (&'n mut [u8], Self)
     where
-        'a: 'b;
+        'n: 'a;
 
     #[inline]
-    fn create<'a>(arena: &'a mut [u8]) -> crate::Result<Self>
+    fn create<'n>(input: &'n mut [u8]) -> crate::Result<Self>
     where
-        'a: 'b,
+        'n: 'a,
     {
-        Self::build(arena).map(|(_, this)| this)
+        Self::build(input).map(|(_, this)| this)
     }
 
     #[inline]
-    fn unused(arena: &[u8]) -> crate::Result<&[u8]> {
+    fn unused<'b>(input: &'b [u8]) -> crate::Result<&'b [u8]> {
         // Self::build MUST not mutate the arena itself. Because we drop Self immediately nobody
         // else can, the only one who might is Self::build.
-        let mut_arena = unsafe { &mut *(arena as *const [u8] as *mut [u8]) };
+        let input = unsafe { &mut *(input as *const [u8] as *mut [u8]) };
 
-        Self::build(mut_arena).map(|(unused, _)| &unused[..])
+        Self::build(input).map(|(unused, _)| &unused[..])
     }
 
+    /// May panic
     #[inline]
-    unsafe fn unchecked_create<'a>(arena: &'a mut [u8]) -> Self
+    fn unchecked_create<'n>(input: &'n mut [u8]) -> Self
     where
-        'a: 'b,
+        'n: 'a,
     {
-        let (_, this) = Self::unchecked_build(arena);
+        let (_, this) = Self::unchecked_build(input);
         this
     }
 
     #[inline]
-    fn create_read_only<'a>(arena: &'a [u8]) -> crate::Result<freyr::utils::ReadOnly<Self>>
-    where
-        'a: 'b,
-    {
+    fn create_read_only(input: &'a [u8]) -> crate::Result<freyr::ReadOnly<Self>> {
         // Self::build MUST not mutate the arena itself. Because we return ReadOnly<Self> nobody
         // else can, the only one who might is Self::build.
-        let mut_arena = unsafe { &mut *(arena as *const [u8] as *mut [u8]) };
-        let mut_this = Self::create(mut_arena)?;
-        Ok(freyr::utils::ReadOnly::new(mut_this))
+
+        let input = unsafe { &mut *(input as *const [u8] as *mut [u8]) };
+
+        let mut_this = Self::create(input)?;
+        Ok(freyr::ReadOnly::new(mut_this))
     }
 }
-
-pub type Result<'a, T> = crate::Result<(&'a mut [u8], T)>;

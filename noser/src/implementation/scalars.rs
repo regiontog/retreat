@@ -1,23 +1,16 @@
-use crate::traits::WriteTypeInfo;
 use std::mem;
 
-use crate::traits::{
-    size::{ReadReturn, Static},
-    Read, Sizable, Write,
-};
+use crate::traits::{LiteralInnerType, Read, Write};
 
 macro_rules! impl_rw {
-    ($imp_name:ident, $ty:ident, $($rw:tt)*) => {
+    ($ty:ident, $($rw:tt)*) => {
         $($rw)*
 
-        #[allow(non_snake_case)]
-        mod $imp_name {
-            pub struct ScalarImprinter;
-        }
+        impl LiteralInnerType for $ty {
+            const SIZE: usize = mem::size_of::<$ty>();
 
-        impl WriteTypeInfo<$ty> for $imp_name::ScalarImprinter {
             #[inline]
-            fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
+            fn imprint(arena: &mut [u8]) -> crate::Result<()> {
                 if arena.len() >= mem::size_of::<$ty>() {
                     // Scalars don't need to write any size information
                     Ok(())
@@ -25,36 +18,13 @@ macro_rules! impl_rw {
                     Err(crate::NoserError::Undersized(mem::size_of::<$ty>(), arena.to_vec()))
                 }
             }
-
-            #[inline]
-            fn result_size(&self) -> crate::Ptr {
-                mem::size_of::<$ty>() as crate::Ptr
-            }
-        }
-
-
-        pub static $imp_name: $imp_name::ScalarImprinter = $imp_name::ScalarImprinter {};
-
-        impl Default for &WriteTypeInfo<$ty> {
-            fn default() -> &'static WriteTypeInfo<$ty> {
-                &$imp_name
-            }
-        }
-
-        impl Sizable for $ty {
-            type Strategy = Static;
-
-            #[inline]
-            fn read_size(_: &[u8]) -> ReadReturn<crate::Ptr> {
-                Ok(mem::size_of::<$ty>() as crate::Ptr)
-            }
         }
     };
 }
 
 macro_rules! transmutable_without_endianness_transform {
-    ($imp_name:ident, $ty:ident) => {
-        impl_rw!($imp_name, $ty,
+    ($ty:ident) => {
+        impl_rw!($ty,
             impl Write for $ty {
                 #[inline]
                 fn write(arena: &mut [u8], val: $ty) {
@@ -79,8 +49,8 @@ macro_rules! transmutable_without_endianness_transform {
 }
 
 macro_rules! transmutable {
-    ($imp_name:ident, $ty:ident) => {
-        impl_rw!($imp_name, $ty,
+    ($ty:ident) => {
+        impl_rw!($ty,
             impl Write for $ty {
                 #[inline]
                 fn write(arena: &mut [u8], val: $ty) {
@@ -104,7 +74,7 @@ macro_rules! transmutable {
     };
 }
 
-impl_rw!(IMPRINT_U8, u8,
+impl_rw!(u8,
     impl Write for u8 {
         #[inline]
         fn write(arena: &mut [u8], val: u8) {
@@ -122,21 +92,21 @@ impl_rw!(IMPRINT_U8, u8,
     }
 );
 
-transmutable_without_endianness_transform!(IMPRINT_BOOL, bool);
-transmutable_without_endianness_transform!(IMPRINT_I8, i8);
+transmutable_without_endianness_transform!(bool);
+transmutable_without_endianness_transform!(i8);
 
-transmutable!(IMPRINT_I16, i16);
-transmutable!(IMPRINT_U16, u16);
-transmutable!(IMPRINT_I32, i32);
-transmutable!(IMPRINT_U32, u32);
-transmutable!(IMPRINT_I64, i64);
-transmutable!(IMPRINT_U64, u64);
+transmutable!(i16);
+transmutable!(u16);
+transmutable!(i32);
+transmutable!(u32);
+transmutable!(i64);
+transmutable!(u64);
 #[cfg(feature = "i128")]
-transmutable!(IMPRINT_I128, i128);
+transmutable!(i128);
 #[cfg(feature = "u128")]
-transmutable!(IMPRINT_U128, u128);
+transmutable!(u128);
 
-impl_rw!(IMPRINT_CHAR, char,
+impl_rw!(char,
     impl Write for char {
         #[inline]
         fn write(arena: &mut [u8], val: char) {
@@ -154,7 +124,7 @@ impl_rw!(IMPRINT_CHAR, char,
     }
 );
 
-impl_rw!(IMPRINT_F32, f32,
+impl_rw!(f32,
     impl Write for f32 {
         #[inline]
         fn write(arena: &mut [u8], val: f32) {
@@ -172,7 +142,7 @@ impl_rw!(IMPRINT_F32, f32,
     }
 );
 
-impl_rw!(IMPRINT_F64, f64,
+impl_rw!(f64,
     impl Write for f64 {
         #[inline]
         fn write(arena: &mut [u8], val: f64) {

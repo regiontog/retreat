@@ -81,6 +81,7 @@ enum EnumMultiple {
 
 #[derive(SizableDynamic, Build)]
 struct FuzzType<'a> {
+    // TODO: Add slices
     lit_char: Literal<'a, char>,
     lit_bool: Literal<'a, bool>,
     lit_u8: Literal<'a, u8>,

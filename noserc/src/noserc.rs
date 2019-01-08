@@ -10,6 +10,7 @@ use syn::{parse_macro_input, parse_quote, DeriveInput};
 mod build;
 mod imprinter;
 mod size;
+mod static_enum;
 
 type DeriveResult = Result<TokenStream, syn::Error>;
 
@@ -32,24 +33,26 @@ pub fn derive_imprinter(input: proc_macro::TokenStream) -> proc_macro::TokenStre
     unwrap(imprinter::derive(input))
 }
 
-#[proc_macro_derive(SizableStatic)]
+#[proc_macro_derive(StaticSizeable)]
 pub fn derive_size_static(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     unwrap(size::derive_static(input))
 }
 
-#[proc_macro_derive(SizableDynamic)]
+#[proc_macro_derive(DynamicSizeable)]
 pub fn derive_size_dynamic(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
 
     unwrap(size::derive_dynamic(input))
 }
 
-//TODO: Special derive for static enums! (They need special versions
-// of Build/WriteTypeInfo that reserves space for the longest variant) Also
-// figure out how to swap variant variant in place. Otherwise this version of
-// enum's are strictly worse than the dynamic kind
+#[proc_macro_derive(StaticEnum)]
+pub fn derive_static_enum(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+
+    unwrap(static_enum::derive(input))
+}
 
 struct Options {
     arena: Option<syn::LifetimeDef>,

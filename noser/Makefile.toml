@@ -1,0 +1,13 @@
+[tasks.bench]
+toolchain = "nightly"
+command = "cargo"
+args = ["bench", "${@}"]
+
+[tasks.watch]
+command = "cargo"
+args = ["watch", "-x", "test", "${@}"]
+
+[tasks.fix]
+toolchain = "nightly"
+command = "cargo"
+args = ["fix", "${@}"]

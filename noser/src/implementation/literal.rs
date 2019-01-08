@@ -1,5 +1,8 @@
 use crate::prelude::SliceExt;
-use crate::traits::{size::ReadReturn, Build, Read, Sizable, Write, WriteTypeInfo};
+use crate::traits::{
+    size::{ReadReturn, Sizeable, Static},
+    Build, DefaultWriter, LiteralInnerType, Read, Write, WriteTypeInfo,
+};
 
 use std::marker::PhantomData;
 
@@ -32,32 +35,28 @@ where
     }
 }
 
-impl<T> Sizable for Literal<'_, T>
+impl<T> Sizeable for Literal<'_, T>
 where
-    T: Sizable,
+    T: LiteralInnerType,
 {
-    type Strategy = T::Strategy;
+    type Strategy = Static;
 
     #[inline]
-    fn read_size(arena: &[u8]) -> ReadReturn<T> {
-        T::read_size(arena)
+    fn read_size(_: &[u8]) -> ReadReturn<Self> {
+        Ok(T::SIZE as crate::Ptr)
     }
 }
 
-impl<'l, T> Build<'l> for Literal<'l, T>
+unsafe impl<'l, T> Build<'l> for Literal<'l, T>
 where
-    T: Sizable,
+    T: LiteralInnerType,
 {
     #[inline]
-    unsafe fn unchecked_build<'a>(arena: &'a mut [u8]) -> (&'a mut [u8], Self)
+    fn unchecked_build<'n>(arena: &'n mut [u8]) -> (&'n mut [u8], Literal<T>)
     where
-        'a: 'l,
+        'n: 'l,
     {
-        let size = T::read_size(arena).expect(
-            "unchecked build needs to ensure the arena is correct before calling this method!",
-        );
-
-        let (left, right) = arena.split_at_mut(size as usize);
+        let (left, right) = arena.split_at_mut(T::SIZE);
         (
             right,
             Literal {
@@ -68,12 +67,11 @@ where
     }
 
     #[inline]
-    fn build<'a>(arena: &'a mut [u8]) -> crate::Result<(&'a mut [u8], Self)>
+    fn build<'n>(arena: &'n mut [u8]) -> crate::Result<(&'n mut [u8], Self)>
     where
-        'a: 'l,
+        'n: 'l,
     {
-        let size = T::read_size(arena).map_err(Into::into)?;
-        let (left, right) = arena.noser_split(size)?;
+        let (left, right) = arena.noser_split(T::SIZE as crate::Ptr)?;
 
         Ok((
             right,
@@ -85,41 +83,44 @@ where
     }
 }
 
-pub struct LitImprinter;
+pub struct LiteralWriter;
 
-impl<T> WriteTypeInfo<Literal<'_, T>> for LitImprinter
+static WRITE_LITERAL_TYPE: LiteralWriter = LiteralWriter {};
+
+impl<'a, T> WriteTypeInfo<Literal<'a, T>> for LiteralWriter
 where
-    for<'t> &'t WriteTypeInfo<T>: Default,
+    T: LiteralInnerType,
 {
+    #[inline]
     fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
-        <&WriteTypeInfo<T>>::default().imprint(arena)
+        T::imprint(arena)
     }
 
+    #[inline]
     fn result_size(&self) -> crate::Ptr {
-        <&WriteTypeInfo<T>>::default().result_size()
+        T::SIZE as crate::Ptr
     }
 }
 
-pub static LIT_IMPRINTER: LitImprinter = LitImprinter {};
-
-impl<T> Default for &WriteTypeInfo<Literal<'_, T>>
+impl<'a, T> DefaultWriter for Literal<'a, T>
 where
-    for<'t> &'t WriteTypeInfo<T>: Default,
+    T: LiteralInnerType,
 {
-    fn default() -> Self {
-        &LIT_IMPRINTER
+    type Writer = LiteralWriter;
+
+    fn writer() -> &'static Self::Writer {
+        &WRITE_LITERAL_TYPE
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::implementation::scalars;
-    use crate::traits::*;
+    use crate::traits::Build;
 
     #[test]
     fn literal() {
-        let mut arena = scalars::IMPRINT_U8.create_buffer().unwrap();
+        let mut arena = <Literal<u8>>::buffer().unwrap();
 
         let mut owned: Literal<'_, u8> = Literal::create(&mut arena).unwrap();
         owned.write(10);
@@ -129,14 +130,14 @@ mod tests {
 
     #[test]
     fn undersized_arena() {
-        let mut arena = scalars::IMPRINT_U64.create_buffer().unwrap();
+        let mut arena = <Literal<u64>>::buffer().unwrap();
 
         let undersized = &mut arena[..3];
 
         let mut results = vec![];
 
-        results.push(scalars::IMPRINT_U64.imprint(undersized));
-        results.push(Literal::<u64>::create(undersized).map(|_| ()));
+        results.push(<Literal<u64>>::write_type(undersized));
+        results.push(<Literal<u64>>::create(undersized).map(|_| ()));
 
         println!("{:?}", results);
         assert!(results.into_iter().all(|r| r.is_err()));

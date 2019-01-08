@@ -1,57 +1,34 @@
-extern crate capnp;
+extern crate noser;
+extern crate noserc;
 
-pub mod actions_capnp {
-    include!(concat!(env!("OUT_DIR"), "/actions_capnp.rs"));
-}
+pub mod net {
+    use noser::{List, Literal};
+    use noserc::{Build, SizableDynamic};
 
-pub mod builder {
-    use actions_capnp::Direction;
+    #[derive(Build, SizableDynamic)]
+    pub enum Direction {
+        North,
+        East,
+        West,
+        South,
+    }
 
-    pub enum PlaceholderAction {
+    #[derive(Build, SizableDynamic)]
+    pub enum Action {
         Move(Direction),
         Shoot(Direction),
         Jump,
     }
 
-    pub mod action {
-        use actions_capnp::client_actions;
-        use builder::PlaceholderAction;
-        use capnp::message::{Builder, HeapAllocator, TypedReader};
-
-        pub fn actions(
-            frame: u8,
-            actions: &Vec<PlaceholderAction>,
-        ) -> TypedReader<Builder<HeapAllocator>, client_actions::Owned> {
-            let mut message = ::capnp::message::Builder::new_default();
-            {
-                let mut root = message.init_root::<client_actions::Builder>();
-                root.set_frame(frame);
-
-                let mut list = root.reborrow().init_actions(actions.len() as u32); //FIXME: Hacky?
-
-                for (i, action) in actions.iter().enumerate() {
-                    match action {
-                        PlaceholderAction::Move(dir) => {
-                            list.reborrow().get(i as u32).set_move(*dir)
-                        }
-                        PlaceholderAction::Shoot(dir) => {
-                            list.reborrow().get(i as u32).set_shoot(*dir)
-                        }
-                        PlaceholderAction::Jump => list.reborrow().get(i as u32).set_jump(()),
-                    }
-                }
-            }
-
-            TypedReader::from(message)
-        }
+    #[derive(Build, SizableDynamic)]
+    pub struct Proto<'a> {
+        frame: Literal<'a, u8>,
+        actions: List<'a, Action>,
     }
 }
 
 pub mod game {
     use std::time::{Duration, Instant};
-
-    use actions_capnp::{action, client_actions, Direction};
-    use capnp::message::{ReaderSegments, TypedReader};
 
     pub struct Player {
         id: u64,
@@ -71,19 +48,16 @@ pub mod game {
             }
         }
 
-        fn take_action(&mut self, action: action::Which) {
+        fn take_action(&mut self, action: Action) {
             match action {
-                action::Which::Move(mov) => match mov {
-                    Ok(mov) => match mov {
-                        Direction::Forward => self.pos.0 = self.pos.0.wrapping_sub(1),
-                        Direction::Backward => self.pos.0 = self.pos.0.wrapping_add(1),
-                        Direction::Left => self.pos.1 = self.pos.1.wrapping_sub(1),
-                        Direction::Right => self.pos.1 = self.pos.1.wrapping_add(1),
-                    },
-                    Err(_) => unreachable!(),
+                Action::Move(mov) => match mov {
+                    Direction::South => self.pos.0 = self.pos.0.wrapping_sub(1),
+                    Direction::North => self.pos.0 = self.pos.0.wrapping_add(1),
+                    Direction::West => self.pos.1 = self.pos.1.wrapping_sub(1),
+                    Direction::East => self.pos.1 = self.pos.1.wrapping_add(1),
                 },
-                action::Which::Shoot(_shoot) => println!("shoot"),
-                action::Which::Jump(_jump) => println!("jump"),
+                Action::Shoot(_shoot) => println!("shoot"),
+                Action::Jump(_jump) => println!("jump"),
             }
         }
     }
@@ -92,17 +66,15 @@ pub mod game {
         pub fn advance<A: ReaderSegments>(
             &mut self,
             player: &mut Player,
-            controls: TypedReader<A, client_actions::Owned>,
+            controls: Proto,
         ) {
-            let unwrapped = controls.get().unwrap();
-
-            debug_assert!(self.frame == unwrapped.get_frame());
-            for a in unwrapped.get_actions().unwrap() {
-                match a.which() {
-                    Ok(action) => player.take_action(action),
-                    Err(_) => unreachable!(),
-                }
-            }
+            debug_assert!(self.frame == controls.frame.read());
+            // for i in 0..controls.actions.capacity() {
+            //     match a.which() {
+            //         Ok(action) => player.take_action(action),
+            //         Err(_) => unreachable!(),
+            //     }
+            // }
 
             self.world = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
             self.world[(player.pos.0 % 3) as usize][(player.pos.1 % 3) as usize] = player.id as u8;

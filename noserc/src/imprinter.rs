@@ -13,7 +13,7 @@ pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream
         }
         _ => Err(syn::Error::new(
             input.span(),
-            "'Build' derive does not support this data type!",
+            "'WriteTypeInfo' derive does not support this data type!",
         )),
     }
 }
@@ -35,15 +35,19 @@ pub(crate) fn struct_derive(input: DeriveInput, data: &DataStruct) -> crate::Der
         proc_macro2::Span::call_site(),
     );
 
+    let lifetimes = input.generics.lifetimes();
+
     Ok(quote! {
         pub(crate) struct #imprinter_struct;
 
-        impl #impl_generics ::noser::traits::WriteTypeInfo<#name #ty_generics> for #imprinter_struct #where_clause {
+        impl #impl_generics ::noser::traits::WriteTypeInfo<#name #ty_generics> for #imprinter_struct #where_clause {}
+
+        impl <#(#lifetimes),*> ::noser::traits::WriteTypeInfoErased for #imprinter_struct {
             #[inline]
             fn imprint(&self, arena: &mut [u8]) -> ::noser::Result<()> {
                 use noser::prelude::SliceExt;
                 #(
-                let imprinter = <crate::WriteTypeInfo<#types>>::default();
+                let imprinter = <#types as ::noser::traits::DefaultWriter>::writer();
                 let (left, arena) = arena.noser_split(imprinter.result_size())?;
                 imprinter.imprint(left)?;
                 )*
@@ -53,17 +57,19 @@ pub(crate) fn struct_derive(input: DeriveInput, data: &DataStruct) -> crate::Der
             #[inline]
             fn result_size(&self) -> ::noser::Ptr {
                 let mut size = 0;
-                #(size += <crate::WriteTypeInfo<#types2>>::default().result_size();)*
+                #(size += <#types2 as ::noser::traits::DefaultWriter>::writer().result_size();)*
                 size
             }
         }
 
         pub(crate) static #imprinter_static: #imprinter_struct = #imprinter_struct {};
 
-        impl #impl_generics Default for crate::WriteTypeInfo<'_, #name #ty_generics> #where_clause {
+        impl #impl_generics ::noser::traits::DefaultWriter for #name #ty_generics #where_clause {
+            type Writer = #imprinter_struct;
+
             #[inline]
-            fn default() -> crate::WriteTypeInfo<'static, #name #ty_generics> {
-                crate::WriteTypeInfo(&#imprinter_static)
+            fn writer() -> &'static Self::Writer {
+                &#imprinter_static
             }
         }
     })
@@ -88,7 +94,7 @@ pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveR
 
         quote! {
             #(
-            let imprinter = <crate::WriteTypeInfo<#types>>::default();
+            let imprinter = <#types as ::noser::traits::DefaultWriter>::writer();
             let (left, arena) = arena.noser_split(imprinter.result_size())?;
             imprinter.imprint(left)?;
             )*
@@ -100,7 +106,7 @@ pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveR
         let types = v.fields.iter().map(|f| &f.ty);
 
         quote! {
-            #(size += <crate::WriteTypeInfo<#types>>::default().result_size();)*
+            #(size += <#types as ::noser::traits::DefaultWriter>::writer().result_size();)*
         }
     });
 
@@ -114,7 +120,9 @@ pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveR
             #(#variants,)*
         }
 
-        impl #impl_generics ::noser::traits::WriteTypeInfo<#name #ty_generics> for #imprinter_enum #where_clause {
+        impl #impl_generics ::noser::traits::WriteTypeInfo<#name #ty_generics> for #imprinter_enum #where_clause {}
+
+        impl ::noser::traits::WriteTypeInfoErased for #imprinter_enum {
             #[inline]
             fn imprint(&self, arena: &mut [u8]) -> ::noser::Result<()> {
                 use noser::prelude::SliceExt;

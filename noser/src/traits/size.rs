@@ -9,7 +9,13 @@ pub enum SizeKind {
     Exactly(crate::Ptr),
 }
 
-pub trait Sizable {
+pub trait StaticSizeable: Sizeable<Strategy = Static> {}
+pub trait DynamicSizeable: Sizeable<Strategy = Dynamic> {}
+
+impl<T> StaticSizeable for T where T: Sizeable<Strategy = Static> {}
+impl<T> DynamicSizeable for T where T: Sizeable<Strategy = Dynamic> {}
+
+pub trait Sizeable {
     type Strategy: SizeStrategy;
 
     fn read_size(_: &[u8]) -> ReadReturn<Self>;
@@ -53,7 +59,7 @@ pub trait Sizable {
 pub enum NoError {}
 
 #[allow(type_alias_bounds)]
-pub type ReadReturn<T: Sizable> = Result<crate::Ptr, <T::Strategy as SizeStrategy>::ErrorType>;
+pub type ReadReturn<T: Sizeable> = Result<crate::Ptr, <T::Strategy as SizeStrategy>::ErrorType>;
 
 impl Into<crate::NoserError> for NoError {
     fn into(self) -> crate::NoserError {

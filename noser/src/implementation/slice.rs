@@ -1,86 +1,102 @@
-use std::mem;
+use crate::prelude::SliceExt;
+use crate::traits::{size::Dynamic, size::Sizeable, Build, Read, Write, WriteTypeInfo};
 
-use crate::traits::{size::Dynamic, Read, Sizable, Write};
+trait SliceType {
+    type ElemType;
+    const ELEM_SIZE: usize = std::mem::size_of::<Self::ElemType>();
+}
 
-macro_rules! impl_slice_rw {
-    ($ty:ident, { $($rw:tt)* }) => {
-        $($rw)*
+impl SliceType for &'_ [u8] {
+    type ElemType = u8;
+}
 
-        impl<'a> Sizable for &'a [$ty] {
-            type Strategy = Dynamic;
+impl SliceType for &'_ mut [u8] {
+    type ElemType = u8;
+}
+
+pub struct SliceWriter {
+    capacity: crate::Ptr,
+}
+
+impl SliceWriter {
+    pub fn with_capacity<T>(capacity: crate::Ptr) -> impl WriteTypeInfo<T>
+    where
+        SliceWriter: WriteTypeInfo<T>,
+    {
+        SliceWriter { capacity }
+    }
+}
+
+macro_rules! slice_write_type_info {
+    ($type:ty) => {
+        impl WriteTypeInfo<$type> for SliceWriter {
+            #[inline]
+            fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
+                let (len_bytes, rest) = arena.noser_split(crate::Ptr::OUT_SIZE as crate::Ptr)?;
+                rest.noser_split(self.capacity * <$type>::ELEM_SIZE as crate::Ptr)?;
+
+                crate::Ptr::write(len_bytes, self.capacity);
+                Ok(())
+            }
 
             #[inline]
-            fn read_size(arena: &[u8]) -> crate::Result<crate::Ptr> {
-                let len = crate::Ptr::read_safe(arena)?;
-                Ok(len
-                    .checked_mul(mem::size_of::<$ty>() as crate::Ptr)
-                    .and_then(|r| r.checked_add(crate::Ptr::static_size()))
-                    .ok_or(crate::NoserError::IntegerOverflow)?
-                )
+            fn result_size(&self) -> crate::Ptr {
+                crate::Ptr::OUT_SIZE as crate::Ptr
+                    + self.capacity * <$type>::ELEM_SIZE as crate::Ptr
             }
         }
     };
 }
 
-impl_slice_rw!(u8, {
-    impl<'a> Write for &'a [u8] {
-        /// Performs a copy of each element in the slice.
-        #[inline]
-        fn write(arena: &mut [u8], val: Self) {
-            let len = val.len();
-            crate::Ptr::write(arena, len as crate::Ptr);
-            unsafe {
-                ::std::ptr::copy_nonoverlapping(
-                    val.as_ptr(),
-                    arena[mem::size_of::<crate::Ptr>()..len].as_mut_ptr(),
-                    len,
-                )
+macro_rules! slice_sizable {
+    ($type:ty) => {
+        impl Sizeable for $type {
+            type Strategy = Dynamic;
+
+            #[inline]
+            fn read_size(arena: &[u8]) -> crate::Result<crate::Ptr> {
+                Ok(crate::Ptr::read_safe(arena)?
+                    .checked_mul(<$type>::ELEM_SIZE as crate::Ptr)
+                    .and_then(|r| r.checked_add(crate::Ptr::OUT_SIZE as crate::Ptr))
+                    .ok_or(crate::NoserError::IntegerOverflow)?)
             }
         }
-    }
+    };
+}
 
-    impl<'r> Read<'r> for &'r [u8] {
-        type Output = Self;
+macro_rules! build_slice {
+    ($lt:lifetime, $slice_ty:ty) => {
+        unsafe impl<$lt> Build<$lt> for $slice_ty {
+            fn build<'a>(arena: &'a mut [u8]) -> crate::Result<(&'a mut [u8], Self)>
+            where
+                'a: 'b,
+            {
+                let (len_bytes, arena) = arena.noser_split(crate::Ptr::OUT_SIZE as crate::Ptr)?;
+                let len = crate::Ptr::read(len_bytes);
 
-        #[inline]
-        /// Panics if reported length is larger than bytes in arena.
-        fn read<'a>(arena: &'a [u8]) -> Self
-        where
-            'a: 'r,
-        {
-            let len = crate::Ptr::read(arena) as usize;
-            &arena[mem::size_of::<crate::Ptr>()..len + mem::size_of::<crate::Ptr>()]
+                let (this, right) = arena.noser_split(len)?;
+                Ok((right, this))
+            }
+
+            fn unchecked_build<'a>(arena: &'a mut [u8]) -> (&'a mut [u8], Self)
+            where
+                'a: 'b,
+            {
+                let len = crate::Ptr::read(arena);
+                let (this, right) = arena.split_at_mut(len as usize);
+
+                (right, &mut this[crate::Ptr::OUT_SIZE..])
+            }
         }
-    }
-});
-
-impl<'a> Write for &'a str {
-    #[inline]
-    fn write(arena: &mut [u8], val: Self) {
-        <&[u8]>::write(arena, val.as_bytes())
-    }
+    };
 }
 
-impl<'r> Read<'r> for &'r str {
-    type Output = Result<Self, ::std::str::Utf8Error>;
-
-    #[inline]
-    fn read<'a>(arena: &'a [u8]) -> Self::Output
-    where
-        'a: 'r,
-    {
-        ::std::str::from_utf8(<&[u8]>::read(arena))
-    }
-}
-
-impl<'a> Sizable for &'a str {
-    type Strategy = Dynamic;
-
-    #[inline]
-    fn read_size(arena: &[u8]) -> crate::Result<crate::Ptr> {
-        <&[u8]>::read_size(arena)
-    }
-}
+slice_write_type_info! { &[u8] }
+slice_write_type_info! { &mut [u8] }
+slice_sizable! { &[u8] }
+slice_sizable! { &mut [u8] }
+build_slice! { 'b, &'b [u8] }
+build_slice! { 'b, &'b mut [u8] }
 
 #[cfg(test)]
 mod tests {
@@ -88,21 +104,33 @@ mod tests {
 
     #[test]
     fn rw_byte_slice() {
-        let arena = &mut [0; 256];
+        let mut arena = SliceWriter::with_capacity::<&mut [u8]>(50)
+            .create_buffer()
+            .unwrap();
 
-        <&[u8]>::write(arena, &[10; 50]);
+        {
+            let bytes = <&mut [u8]>::create(&mut arena).unwrap();
+            bytes.copy_from_slice(&[10; 50]);
+        }
 
-        let result = <&[u8]>::read(arena);
+        let result = <&mut [u8]>::create(&mut arena).unwrap();
         assert!(result.iter().all(|byte| *byte == 10));
         assert!(result.len() == 50);
     }
 
     #[test]
     fn rw_str_slice() {
-        let arena = &mut [0; 256];
+        let str = "こんにちは";
+        let mut arena = SliceWriter::with_capacity::<&mut [u8]>(str.as_bytes().len() as crate::Ptr)
+            .create_buffer()
+            .unwrap();
 
-        <&str>::write(arena, "こんにちは");
-        println!("{:?}", <&str>::read(arena));
-        assert!(Ok("こんにちは") == <&str>::read(arena));
+        {
+            let bytes = <&mut [u8]>::create(&mut arena).unwrap();
+            bytes.copy_from_slice(str.as_bytes());
+        }
+
+        let result = <&mut [u8]>::create(&mut arena).unwrap();
+        assert!(Ok("こんにちは") == std::str::from_utf8(result));
     }
 }

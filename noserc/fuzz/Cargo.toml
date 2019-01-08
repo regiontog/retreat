@@ -22,5 +22,5 @@ git = "https://github.com/rust-fuzz/libfuzzer-sys.git"
 members = ["."]
 
 [[bin]]
-name = "build"
+name = "fuzz_build"
 path = "fuzz_targets/build.rs"

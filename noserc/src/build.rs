@@ -58,7 +58,7 @@ pub(crate) fn struct_derive(mut input: DeriveInput, data: &DataStruct) -> crate:
         crate::split_for_impl_add(&mut input.generics, &arena_generics);
 
     Ok(quote! {
-        impl #impl_generics ::noser::traits::Build <#arena_generics> for #name #ty_generics #where_clause {
+        unsafe impl #impl_generics ::noser::traits::Build <#arena_generics> for #name #ty_generics #where_clause {
             #[inline]
             fn build<'_a>(arena: &'_a mut [u8]) -> ::noser::Result<(&'_a mut [u8], Self)>
                 where '_a: #arena_generics
@@ -67,7 +67,7 @@ pub(crate) fn struct_derive(mut input: DeriveInput, data: &DataStruct) -> crate:
             }
 
             #[inline]
-            unsafe fn unchecked_build<'_a>(arena: &'_a mut [u8]) -> (&'_a mut [u8], Self)
+            fn unchecked_build<'_a>(arena: &'_a mut [u8]) -> (&'_a mut [u8], Self)
                 where '_a: #arena_generics
             {
                 #unsafe_build_impl
@@ -129,7 +129,7 @@ pub(crate) fn enum_derive(mut input: DeriveInput, data: &DataEnum) -> crate::Der
     });
 
     Ok(quote! {
-        impl #impl_generics ::noser::traits::Build <#arena_generics> for #name #ty_generics #where_clause {
+        unsafe impl #impl_generics ::noser::traits::Build <#arena_generics> for #name #ty_generics #where_clause {
             #[inline]
             fn build<'_a>(arena: &'_a mut [u8]) -> ::noser::Result<(&'_a mut [u8], Self)>
                 where '_a: #arena_generics
@@ -146,7 +146,7 @@ pub(crate) fn enum_derive(mut input: DeriveInput, data: &DataEnum) -> crate::Der
             }
 
             #[inline]
-            unsafe fn unchecked_build<'_a>(arena: &'_a mut [u8]) -> (&'_a mut [u8], Self)
+            fn unchecked_build<'_a>(arena: &'_a mut [u8]) -> (&'_a mut [u8], Self)
                 where '_a: #arena_generics
             {
                 match ::noser::read_var_len_int(arena, #variant_bytes) {
