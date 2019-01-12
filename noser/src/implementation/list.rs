@@ -1,10 +1,9 @@
 use crate::prelude::SliceExt;
 use crate::traits::{
-    size::Sizeable,
-    size::{Dynamic, SizeKind, Static},
-    Build, Read, Write, WriteTypeInfo,
+    size::{Dynamic, SizeKind, Sizeable},
+    Build, DefaultWriter, LiteralInnerType, Read, WriteTypeInfo,
 };
-use crate::Ptr;
+use crate::writer::list::{FromSlice, WithCapacity};
 
 use std::marker::PhantomData;
 
@@ -37,21 +36,6 @@ pub struct CovariantList<T> {
 pub struct List<'l, T> {
     pub inner: CovariantList<T>,
     pub arena: &'l mut [u8],
-}
-
-pub struct DynamicItemListImprinter<'a, 'b, W> {
-    list_imprinter: ListImprinter,
-    item_types: &'a [&'b W],
-    items_sum_size: Ptr,
-}
-
-pub struct StaticItemListImprinter<A> {
-    list_imprinter: ListImprinter,
-    phantom: PhantomData<A>,
-}
-
-struct ListImprinter {
-    capacity: ListLen,
 }
 
 impl<T> CovariantList<T> {
@@ -126,29 +110,17 @@ impl<'l, T> List<'l, T> {
         freyr::ReadOnly::new(unsafe { self.get_from_imut(idx) })
     }
 
-    #[inline]
-    pub fn from<'b, W>(item_types: &'b [&'b W]) -> impl WriteTypeInfo<List<'b, T>>
-    where
-        W: WriteTypeInfo<T>,
-    {
-        DynamicItemListImprinter {
-            list_imprinter: ListImprinter {
-                capacity: item_types.len() as ListLen,
-            },
-            items_sum_size: item_types.iter().map(|&item| item.result_size()).sum(),
-            item_types,
-        }
+    pub fn from<'a, 'b>(
+        item_types: &'a [&'b dyn WriteTypeInfo<T>],
+    ) -> impl WriteTypeInfo<Self> + 'a {
+        FromSlice::from_slice(item_types)
     }
 
-    #[inline]
-    pub fn with_capacity(capacity: ListLen) -> impl WriteTypeInfo<Self>
+    pub fn with_capacity(capacity: ListLen) -> WithCapacity<T>
     where
-        T: Sizeable<Strategy = Static>,
+        T: DefaultWriter,
     {
-        StaticItemListImprinter {
-            list_imprinter: ListImprinter { capacity },
-            phantom: PhantomData,
-        }
+        WithCapacity::with_capacity(capacity)
     }
 }
 
@@ -170,7 +142,7 @@ where
         (
             right,
             List {
-                arena: &mut left[ListLen::OUT_SIZE..],
+                arena: &mut left[ListLen::SIZE..],
                 inner: CovariantList {
                     capacity,
                     phantom: PhantomData,
@@ -185,7 +157,7 @@ where
         'w: 'l,
     {
         // First bytes of list is it's length
-        let (left, arena) = arena.noser_split(ListLen::OUT_SIZE as crate::Ptr)?;
+        let (left, arena) = arena.noser_split(ListLen::SIZE as crate::Ptr)?;
         let capacity = ListLen::read(left);
 
         let unused = {
@@ -229,11 +201,11 @@ where
         match T::size() {
             SizeKind::Exactly(size) => Ok(capacity
                 .checked_mul(size)
-                .and_then(|r| r.checked_add(ListLen::OUT_SIZE as crate::Ptr))
+                .and_then(|r| r.checked_add(ListLen::SIZE as crate::Ptr))
                 .ok_or(crate::NoserError::IntegerOverflow)?),
 
             SizeKind::Dynamic => {
-                let mut read_head = ListLen::OUT_SIZE as crate::Ptr;
+                let mut read_head = ListLen::SIZE as crate::Ptr;
 
                 for _ in 0..capacity {
                     read_head = read_head
@@ -246,64 +218,6 @@ where
                 Ok(read_head)
             }
         }
-    }
-}
-
-impl ListImprinter {
-    #[inline]
-    fn imprint<'a>(&self, arena: &'a mut [u8]) -> crate::Result<&'a mut [u8]> {
-        // First write the capacity of the list
-        let (left, right) = arena.noser_split(ListLen::OUT_SIZE as crate::Ptr)?;
-        ListLen::write(left, self.capacity);
-
-        Ok(right)
-    }
-}
-
-// TODO: Rewrite to use Default WriteTypeInfo somehow? Problem with other crate's custom WriteTypeInfo?
-impl<'a, A> WriteTypeInfo<List<'a, A>> for StaticItemListImprinter<A>
-where
-    A: Sizeable<Strategy = Static>,
-{
-    #[inline]
-    fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
-        let capacity = self.list_imprinter.capacity;
-
-        // Static item list don't need to initialize the lookup table
-        let arena = self.list_imprinter.imprint(arena)?;
-
-        // Ensure the arena is large enough
-        arena.noser_split(capacity * A::static_size())?;
-
-        Ok(())
-    }
-
-    #[inline]
-    fn result_size(&self) -> crate::Ptr {
-        self.list_imprinter.capacity * A::static_size() + ListLen::OUT_SIZE as crate::Ptr
-    }
-}
-
-impl<'a, W, T> WriteTypeInfo<List<'a, T>> for DynamicItemListImprinter<'_, '_, W>
-where
-    W: WriteTypeInfo<T>,
-{
-    #[inline]
-    fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
-        let mut arena = self.list_imprinter.imprint(arena)?;
-
-        for &kind in self.item_types {
-            let (left, right) = arena.noser_split(kind.result_size())?;
-            kind.imprint(left)?;
-            arena = right;
-        }
-
-        Ok(())
-    }
-
-    #[inline]
-    fn result_size(&self) -> crate::Ptr {
-        self.items_sum_size + ListLen::OUT_SIZE as crate::Ptr
     }
 }
 

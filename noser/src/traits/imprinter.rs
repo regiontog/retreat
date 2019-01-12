@@ -13,14 +13,14 @@ pub trait WriteTypeInfo<T> {
 }
 
 pub trait DefaultWriter: Sized {
-    type Writer: WriteTypeInfo<Self> + 'static;
+    // type Writer: WriteTypeInfo<Self> + 'static;
 
-    fn writer() -> &'static Self::Writer;
+    fn writer() -> &'static WriteTypeInfo<Self>;
 
     #[inline]
     fn write_type(arena: &mut [u8]) -> crate::Result<()>
     where
-        Self::Writer: 'static,
+        Self: 'static,
     {
         Self::writer().imprint(arena)
     }
@@ -28,7 +28,7 @@ pub trait DefaultWriter: Sized {
     #[inline]
     fn buffer() -> crate::Result<Vec<u8>>
     where
-        Self::Writer: 'static,
+        Self: 'static,
     {
         Self::writer().create_buffer()
     }

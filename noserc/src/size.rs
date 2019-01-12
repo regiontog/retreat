@@ -38,12 +38,12 @@ pub(crate) fn struct_derive_static(input: DeriveInput, data: &DataStruct) -> cra
     let types = data.fields.iter().map(|f| &f.ty);
 
     Ok(quote! {
-        impl #impl_generics ::noser::traits::Sizeable for #name #ty_generics #where_clause {
+        impl #impl_generics ::noser::traits::size::Sizeable for #name #ty_generics #where_clause {
             type Strategy = ::noser::traits::size::Static;
 
             fn read_size(arena: &[u8]) -> ::noser::traits::size::ReadReturn<Self> {
                 let mut size = 0;
-                #(size += <#types as ::noser::traits::Sizeable>::static_size();)*
+                #(size += <#types as ::noser::traits::size::Sizeable>::static_size();)*
                 Ok(size)
             }
         }
@@ -57,7 +57,7 @@ pub(crate) fn struct_derive_dynamic(input: DeriveInput, data: &DataStruct) -> cr
     let types = data.fields.iter().map(|f| &f.ty);
 
     Ok(quote! {
-        impl #impl_generics ::noser::traits::Sizeable for #name #ty_generics #where_clause {
+        impl #impl_generics ::noser::traits::size::Sizeable for #name #ty_generics #where_clause {
             type Strategy = ::noser::traits::size::Dynamic;
 
             fn read_size(arena: &[u8]) -> ::noser::traits::size::ReadReturn<Self> {
@@ -67,7 +67,7 @@ pub(crate) fn struct_derive_dynamic(input: DeriveInput, data: &DataStruct) -> cr
                 let mut size = 0;
                 let mut cur_size = 0;
                 #(
-                    cur_size = <#types as ::noser::traits::Sizeable>::read_size(arena).map_err(Into::into)?;
+                    cur_size = <#types as ::noser::traits::size::Sizeable>::read_size(arena).map_err(Into::into)?;
                     let (_, arena) = arena.noser_split_imut(cur_size)?;
                     size += cur_size;
                 )*
@@ -91,7 +91,7 @@ pub(crate) fn enum_derive_dynamic(input: DeriveInput, data: &DataEnum) -> crate:
 
         quote! {
             #(
-                cur_size = <#types as ::noser::traits::Sizeable>::read_size(arena).map_err(Into::into)?;
+                cur_size = <#types as ::noser::traits::size::Sizeable>::read_size(arena).map_err(Into::into)?;
                 let (_, arena) = arena.noser_split_imut(cur_size)?;
                 size += cur_size;
             )*
@@ -100,7 +100,7 @@ pub(crate) fn enum_derive_dynamic(input: DeriveInput, data: &DataEnum) -> crate:
     });
 
     Ok(quote! {
-        impl #impl_generics ::noser::traits::Sizeable for #name #ty_generics #where_clause {
+        impl #impl_generics ::noser::traits::size::Sizeable for #name #ty_generics #where_clause {
             type Strategy = ::noser::traits::size::Dynamic;
 
             fn read_size(arena: &[u8]) -> ::noser::traits::size::ReadReturn<Self> {

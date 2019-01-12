@@ -34,13 +34,13 @@ macro_rules! transmutable_without_endianness_transform {
                 }
             }
 
-            impl<'r> Read<'r> for $ty {
+            impl Read for $ty {
                 type Output = $ty;
 
                 #[inline]
-                fn read<'a>(arena: &'a [u8]) -> $ty where 'a: 'r {
+                fn read(arena: &[u8]) -> $ty {
                     #[allow(clippy::cast_ptr_alignment)]
-                    let p = (&arena[..mem::size_of::<$ty>()]).as_ptr() as *const $ty;
+                    let p = (&arena[..Self::SIZE]).as_ptr() as *const $ty;
                     unsafe { std::ptr::read_unaligned(p) }
                 }
             }
@@ -60,11 +60,11 @@ macro_rules! transmutable {
                 }
             }
 
-            impl<'r> Read<'r> for $ty {
+            impl Read for $ty {
                 type Output = $ty;
 
                 #[inline]
-                fn read<'a>(arena: &'a [u8]) -> $ty where 'a: 'r {
+                fn read(arena: &[u8]) -> $ty {
                     #[allow(clippy::cast_ptr_alignment)]
                     let p = (&arena[..mem::size_of::<$ty>()]).as_ptr() as *const $ty;
                     $ty::from_le(unsafe { std::ptr::read_unaligned(p) })
@@ -82,11 +82,11 @@ impl_rw!(u8,
         }
     }
 
-    impl<'r> Read<'r> for u8 {
+    impl Read for u8 {
         type Output = u8;
 
         #[inline]
-        fn read<'a>(arena: &'a [u8]) -> u8 where 'a: 'r {
+        fn read(arena: &[u8]) -> u8 {
             arena[0]
         }
     }
@@ -114,11 +114,11 @@ impl_rw!(char,
         }
     }
 
-    impl<'r> Read<'r> for char {
+    impl Read for char {
         type Output = Option<char>;
 
         #[inline]
-        fn read<'a>(arena: &'a [u8]) -> Option<char> where 'a: 'r {
+        fn read(arena: &[u8]) -> Option<char> {
             ::std::char::from_u32(u32::read(arena))
         }
     }
@@ -132,11 +132,11 @@ impl_rw!(f32,
         }
     }
 
-    impl<'r> Read<'r> for f32 {
+    impl Read for f32 {
         type Output = f32;
 
         #[inline]
-        fn read<'a>(arena: &'a [u8]) -> f32 where 'a: 'r {
+        fn read(arena: &[u8]) -> f32 {
             unsafe { *(&u32::read(arena) as *const u32 as *const f32) }
         }
     }
@@ -150,11 +150,11 @@ impl_rw!(f64,
         }
     }
 
-    impl<'r> Read<'r> for f64 {
+    impl Read for f64 {
         type Output = f64;
 
         #[inline]
-        fn read<'a>(arena: &'a [u8]) -> f64 where 'a: 'r {
+        fn read(arena: &[u8]) -> f64 {
             unsafe { *(&u64::read(arena) as *const u64 as *const f64) }
         }
     }

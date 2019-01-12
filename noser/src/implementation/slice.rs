@@ -1,7 +1,7 @@
 use crate::prelude::SliceExt;
-use crate::traits::{size::Dynamic, size::Sizeable, Build, Read, Write, WriteTypeInfo};
+use crate::traits::{size::Dynamic, size::Sizeable, Build, LiteralInnerType, Read};
 
-trait SliceType {
+pub(crate) trait SliceType {
     type ElemType;
     const ELEM_SIZE: usize = std::mem::size_of::<Self::ElemType>();
 }
@@ -14,40 +14,6 @@ impl SliceType for &'_ mut [u8] {
     type ElemType = u8;
 }
 
-pub struct SliceWriter {
-    capacity: crate::Ptr,
-}
-
-impl SliceWriter {
-    pub fn with_capacity<T>(capacity: crate::Ptr) -> impl WriteTypeInfo<T>
-    where
-        SliceWriter: WriteTypeInfo<T>,
-    {
-        SliceWriter { capacity }
-    }
-}
-
-macro_rules! slice_write_type_info {
-    ($type:ty) => {
-        impl WriteTypeInfo<$type> for SliceWriter {
-            #[inline]
-            fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
-                let (len_bytes, rest) = arena.noser_split(crate::Ptr::OUT_SIZE as crate::Ptr)?;
-                rest.noser_split(self.capacity * <$type>::ELEM_SIZE as crate::Ptr)?;
-
-                crate::Ptr::write(len_bytes, self.capacity);
-                Ok(())
-            }
-
-            #[inline]
-            fn result_size(&self) -> crate::Ptr {
-                crate::Ptr::OUT_SIZE as crate::Ptr
-                    + self.capacity * <$type>::ELEM_SIZE as crate::Ptr
-            }
-        }
-    };
-}
-
 macro_rules! slice_sizable {
     ($type:ty) => {
         impl Sizeable for $type {
@@ -57,7 +23,7 @@ macro_rules! slice_sizable {
             fn read_size(arena: &[u8]) -> crate::Result<crate::Ptr> {
                 Ok(crate::Ptr::read_safe(arena)?
                     .checked_mul(<$type>::ELEM_SIZE as crate::Ptr)
-                    .and_then(|r| r.checked_add(crate::Ptr::OUT_SIZE as crate::Ptr))
+                    .and_then(|r| r.checked_add(crate::Ptr::SIZE as crate::Ptr))
                     .ok_or(crate::NoserError::IntegerOverflow)?)
             }
         }
@@ -71,7 +37,7 @@ macro_rules! build_slice {
             where
                 'a: 'b,
             {
-                let (len_bytes, arena) = arena.noser_split(crate::Ptr::OUT_SIZE as crate::Ptr)?;
+                let (len_bytes, arena) = arena.noser_split(crate::Ptr::SIZE as crate::Ptr)?;
                 let len = crate::Ptr::read(len_bytes);
 
                 let (this, right) = arena.noser_split(len)?;
@@ -85,14 +51,12 @@ macro_rules! build_slice {
                 let len = crate::Ptr::read(arena);
                 let (this, right) = arena.split_at_mut(len as usize);
 
-                (right, &mut this[crate::Ptr::OUT_SIZE..])
+                (right, &mut this[crate::Ptr::SIZE..])
             }
         }
     };
 }
 
-slice_write_type_info! { &[u8] }
-slice_write_type_info! { &mut [u8] }
 slice_sizable! { &[u8] }
 slice_sizable! { &mut [u8] }
 build_slice! { 'b, &'b [u8] }
@@ -101,6 +65,8 @@ build_slice! { 'b, &'b mut [u8] }
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::traits::WriteTypeInfo;
+    use crate::writer::slice::*;
 
     #[test]
     fn rw_byte_slice() {

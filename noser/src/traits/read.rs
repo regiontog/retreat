@@ -1,20 +1,13 @@
-pub trait Read<'r> {
+use super::LiteralInnerType;
+
+pub trait Read: LiteralInnerType {
     type Output;
-    const OUT_SIZE: usize = std::mem::size_of::<Self::Output>();
 
-    fn read<'a>(_: &'a [u8]) -> Self::Output
-    where
-        'a: 'r;
+    fn read(_: &[u8]) -> Self::Output;
 
-    fn read_safe<'a>(arena: &'a [u8]) -> crate::Result<Self::Output>
-    where
-        'a: 'r,
-    {
-        if arena.len() < Self::OUT_SIZE {
-            Err(crate::NoserError::Undersized(
-                Self::OUT_SIZE,
-                arena.to_vec(),
-            ))
+    fn read_safe(arena: &[u8]) -> crate::Result<Self::Output> {
+        if arena.len() < Self::SIZE {
+            Err(crate::NoserError::Undersized(Self::SIZE, arena.to_vec()))
         } else {
             Ok(Self::read(arena))
         }

@@ -2,7 +2,7 @@ use std::iter::{Cloned, Repeat, Take};
 use std::slice::Iter;
 
 use crate::prelude::SliceExt;
-use crate::traits::{DefaultWriter, Read, Write, WriteTypeInfo};
+use crate::traits::{DefaultWriter, LiteralInnerType, Write, WriteTypeInfo};
 use crate::List;
 
 use freyr::prelude::*;
@@ -50,17 +50,18 @@ impl<I> ListWriter<I> {
     }
 }
 
-pub type From<'a, 'b, T> = ListWriter<SliceIntoIterWrapper<'a, 'b, (dyn WriteTypeInfo<T> + 'b)>>;
+pub type FromSlice<'a, 'b, T> =
+    ListWriter<SliceIntoIterWrapper<'a, 'b, (dyn WriteTypeInfo<T> + 'b)>>;
 
-impl<'a, 'b, T> From<'a, 'b, T> {
-    pub fn from(writers: &'a [&'b (dyn WriteTypeInfo<T> + 'b)]) -> Self {
+impl<'a, 'b, T> FromSlice<'a, 'b, T> {
+    pub fn from_slice(writers: &'a [&'b (dyn WriteTypeInfo<T> + 'b)]) -> Self {
         ListWriter::new(SliceIntoIterWrapper { slice: writers })
     }
 }
 
-pub type WithCapacity<'a, T> = ListWriter<TakeExactly<Take<Repeat<&'a dyn WriteTypeInfo<T>>>>>;
+pub type WithCapacity<T> = ListWriter<TakeExactly<Take<Repeat<&'static dyn WriteTypeInfo<T>>>>>;
 
-impl<'a, T> WithCapacity<'a, T> {
+impl<T> WithCapacity<T> {
     pub fn with_capacity(capacity: crate::Ptr) -> Self
     where
         T: DefaultWriter,
@@ -79,7 +80,7 @@ where
     #[inline]
     fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
         // First write the capacity of the list
-        let (left, mut arena) = arena.noser_split(crate::ListLen::OUT_SIZE as crate::Ptr)?;
+        let (left, mut arena) = arena.noser_split(crate::ListLen::SIZE as crate::Ptr)?;
         crate::ListLen::write(left, self.capacity);
 
         for kind in self.writers.clone().into_iter() {
@@ -93,7 +94,7 @@ where
 
     #[inline]
     fn result_size(&self) -> crate::Ptr {
-        self.sum_writers_result_size + crate::ListLen::OUT_SIZE as crate::Ptr
+        self.sum_writers_result_size + crate::ListLen::SIZE as crate::Ptr
     }
 }
 
@@ -109,8 +110,22 @@ mod tests {
             .create_buffer()
             .unwrap();
 
-        From::from(&[&WithCapacity::<Literal<u64>>::with_capacity(3)])
+        FromSlice::from_slice(&[&WithCapacity::<Literal<u64>>::with_capacity(3)])
             .create_buffer()
             .unwrap();
+    }
+
+    #[test]
+    fn inference_problem() {
+        use crate::traits::Build;
+
+        let writer: &dyn WriteTypeInfo<Literal<u64>> = Literal::<u64>::writer();
+        let writer = ListWriter::new(std::iter::repeat(writer).take_exactly(50));
+        // let arena: noser::Result<Vec<u8>> = writer.create_buffer();
+        let arena = writer.create_buffer();
+        let mut arena = arena.unwrap();
+
+        let owned = List::<Literal<u64>>::create(&mut arena).unwrap();
+        owned.borrow(49);
     }
 }

@@ -1,7 +1,7 @@
 use crate::prelude::SliceExt;
 use crate::traits::{
     size::{ReadReturn, Sizeable, Static},
-    Build, DefaultWriter, LiteralInnerType, Read, Write, WriteTypeInfo,
+    Build, LiteralInnerType, Read, Write,
 };
 
 use std::marker::PhantomData;
@@ -14,7 +14,7 @@ pub struct Literal<'l, T> {
 
 impl<'r, T> Literal<'_, T>
 where
-    T: Read<'r>,
+    T: Read,
 {
     #[inline]
     pub fn read<'s>(&'s self) -> T::Output
@@ -83,40 +83,10 @@ where
     }
 }
 
-pub struct LiteralWriter;
-
-static WRITE_LITERAL_TYPE: LiteralWriter = LiteralWriter {};
-
-impl<'a, T> WriteTypeInfo<Literal<'a, T>> for LiteralWriter
-where
-    T: LiteralInnerType,
-{
-    #[inline]
-    fn imprint(&self, arena: &mut [u8]) -> crate::Result<()> {
-        T::imprint(arena)
-    }
-
-    #[inline]
-    fn result_size(&self) -> crate::Ptr {
-        T::SIZE as crate::Ptr
-    }
-}
-
-impl<'a, T> DefaultWriter for Literal<'a, T>
-where
-    T: LiteralInnerType,
-{
-    type Writer = LiteralWriter;
-
-    fn writer() -> &'static Self::Writer {
-        &WRITE_LITERAL_TYPE
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::traits::Build;
+    use crate::traits::{Build, DefaultWriter};
 
     #[test]
     fn literal() {

@@ -2,6 +2,8 @@ use noser::traits::DefaultWriter;
 use noser::{List, Literal};
 use noserc::{Build, DynamicSizeable, StaticEnum, StaticSizeable, WriteTypeInfo};
 
+use freyr::prelude::*;
+
 #[allow(dead_code)]
 #[derive(DynamicSizeable, Build)]
 struct Named<'a> {
@@ -243,13 +245,9 @@ fn list_dynamic_struct() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::{get, List};
 
-    let mut arena = List::from(
-        &std::iter::repeat(&NAMED_IMPRINTER)
-            .take(10)
-            .collect::<Vec<_>>(),
-    )
-    .create_buffer()
-    .unwrap();
+    let mut arena = ListWriter::new(std::iter::repeat(&NAMED_IMPRINTER).take_exactly(10))
+        .create_buffer()
+        .unwrap();
     let owned = <List<Named>>::create(&mut arena).unwrap();
 
     let mut item = get! { owned[0] };
@@ -358,13 +356,9 @@ fn out_of_bounds_list2_dynamic_struct() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::List;
 
-    let mut arena = List::from(
-        &std::iter::repeat(&NAMED_IMPRINTER)
-            .take(50)
-            .collect::<Vec<_>>(),
-    )
-    .create_buffer()
-    .unwrap();
+    let mut arena = ListWriter::new(std::iter::repeat(&NAMED_IMPRINTER).take_exactly(50))
+        .create_buffer()
+        .unwrap();
 
     let owned = List::<Named>::create(&mut arena).unwrap();
     owned.borrow(50);
@@ -375,13 +369,9 @@ fn in_bounds_list2_dynamic_struct() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::List;
 
-    let mut arena = List::from(
-        &std::iter::repeat(&NAMED_IMPRINTER)
-            .take(50)
-            .collect::<Vec<_>>(),
-    )
-    .create_buffer()
-    .unwrap();
+    let mut arena = ListWriter::new(std::iter::repeat(&NAMED_IMPRINTER).take_exactly(50))
+        .create_buffer()
+        .unwrap();
 
     let owned = List::<Named>::create(&mut arena).unwrap();
     owned.borrow(49);
@@ -395,13 +385,10 @@ fn list_dynamic_enum() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::{get, List};
 
-    let mut arena = List::from(
-        &std::iter::repeat(&ImprintSingleVariantNamed::Val)
-            .take(10)
-            .collect::<Vec<_>>(),
-    )
-    .create_buffer()
-    .unwrap();
+    let mut arena =
+        ListWriter::new(std::iter::repeat(&ImprintSingleVariantNamed::Val).take_exactly(10))
+            .create_buffer()
+            .unwrap();
     let owned = <List<SingleVariantNamed>>::create(&mut arena).unwrap();
 
     match get! { owned[0] } {
@@ -590,13 +577,10 @@ fn out_of_bounds_list2_dynamic_enum() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::List;
 
-    let mut arena = List::from(
-        &std::iter::repeat(&ImprintSingleVariantNamed::Val)
-            .take(50)
-            .collect::<Vec<_>>(),
-    )
-    .create_buffer()
-    .unwrap();
+    let mut arena =
+        ListWriter::new(std::iter::repeat(&ImprintSingleVariantNamed::Val).take_exactly(50))
+            .create_buffer()
+            .unwrap();
 
     let owned = List::<SingleVariantNamed>::create(&mut arena).unwrap();
     owned.borrow(50);
@@ -607,13 +591,11 @@ fn in_bounds_list2_dynamic_enum() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::List;
 
-    let mut arena = List::from(
-        &std::iter::repeat(&ImprintSingleVariantNamed::Val)
-            .take(50)
-            .collect::<Vec<_>>(),
-    )
-    .create_buffer()
-    .unwrap();
+    let writer =
+        ListWriter::new(std::iter::repeat(&ImprintSingleVariantNamed::Val).take_exactly(50));
+    // let arena: noser::Result<Vec<u8>> = writer.create_buffer();
+    let arena = writer.create_buffer();
+    let mut arena = arena.unwrap();
 
     let owned = List::<SingleVariantNamed>::create(&mut arena).unwrap();
     owned.borrow(49);

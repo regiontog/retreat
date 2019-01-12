@@ -1,5 +1,5 @@
 use quote::quote;
-use syn::{spanned::Spanned, DataEnum, DataStruct, DeriveInput};
+use syn::{spanned::Spanned, DataEnum, DeriveInput};
 
 pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     match &input.data {
@@ -14,7 +14,7 @@ pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream
     }
 }
 
-pub(crate) fn enum_derive(mut input: DeriveInput, data: &DataEnum) -> crate::DeriveResult {
+pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveResult {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let name = &input.ident;
@@ -23,7 +23,9 @@ pub(crate) fn enum_derive(mut input: DeriveInput, data: &DataEnum) -> crate::Der
     let variant_enum = syn::Ident::new(&variant_enum_str, proc_macro2::Span::call_site());
 
     let variant_enum_repeat = std::iter::repeat(&variant_enum);
-    let variant_enum_repeat2 = std::iter::repeat(&variant_enum);
+    let variant_enum_repeat2 = variant_enum_repeat.clone();
+    let variant_enum_repeat3 = variant_enum_repeat.clone();
+    let variant_enum_repeat4 = variant_enum_repeat.clone();
 
     let num_variants = data.variants.len();
     let variant_bytes = ((num_variants as f64).log2() / 8.0).ceil().max(0.) as usize;
@@ -33,6 +35,45 @@ pub(crate) fn enum_derive(mut input: DeriveInput, data: &DataEnum) -> crate::Der
     let variants = data.variants.iter().map(|v| &v.ident);
     let variants2 = data.variants.iter().map(|v| &v.ident);
     let variants3 = data.variants.iter().map(|v| &v.ident);
+    let variants4 = data.variants.iter().map(|v| &v.ident);
+    let variants5 = data.variants.iter().map(|v| &v.ident);
+
+    let builders = data.variants.iter().map(|v| {
+        let ident = &v.ident;
+        crate::build_from_fields(
+            &quote!(#name::#ident),
+            &v.fields,
+            |fields, types| {
+                quote! {
+                    #(let (arena, #fields) = <#types>::build(arena)?;)*
+                }
+            },
+            |constructor| {
+                quote! {
+                    Ok(#constructor)
+                }
+            },
+        )
+    });
+
+    let unsafe_builders = data.variants.iter().map(|v| {
+        let ident = &v.ident;
+        crate::build_from_fields(
+            &quote!(#name::#ident),
+            &v.fields,
+            |fields, types| {
+                quote! {
+                    let arena = &mut arena[#variant_bytes..];
+                    #(let (arena, #fields) = <#types>::unchecked_build(arena);)*
+                }
+            },
+            |constructor| {
+                quote! {
+                    #constructor
+                }
+            },
+        )
+    });
 
     let types = data
         .variants
@@ -72,7 +113,7 @@ pub(crate) fn enum_derive(mut input: DeriveInput, data: &DataEnum) -> crate::Der
 
             #[inline]
             fn static_size() -> usize {
-                use noser::traits::WriteTypeInfoErased;
+                use noser::traits::WriteTypeInfo;
 
                 let mut size = 0;
                 #(size += <#types as ::noser::traits::DefaultWriter>::writer().result_size();)*
@@ -81,12 +122,16 @@ pub(crate) fn enum_derive(mut input: DeriveInput, data: &DataEnum) -> crate::Der
 
             #[inline]
             fn construct_variant(variant: &Self::VariantEnum, arena: &mut [u8]) -> ::noser::Result<Self> {
-                unimplemented!()
+                match variant {
+                    #(#variant_enum_repeat3::#variants4 => { #builders },)*
+                }
             }
 
             #[inline]
             fn unchecked_construct_variant(variant: &Self::VariantEnum, arena: &mut [u8]) -> Self {
-                unimplemented!()
+                match variant {
+                    #(#variant_enum_repeat4::#variants5 => { #unsafe_builders },)*
+                }
             }
         }
     })
