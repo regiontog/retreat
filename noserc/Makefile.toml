@@ -1,14 +1,18 @@
 [tasks.fuzz]
 toolchain = "nightly"
 command = "cargo"
-# codegen-units=1 is a workaround for https://github.com/rust-fuzz/cargo-fuzz/issues/161 
+# codegen-units=1 is a workaround for https://github.com/rust-fuzz/cargo-fuzz/issues/161
 # and https://github.com/rust-lang/rust/issues/53945
 env = { RUSTFLAGS = "-C overflow-checks=y -C codegen-units=1" }
 args = ["fuzz", "run", "fuzz_build", "--release", "--debug-assertions", "${@}"]
 
 [tasks.watch]
 command = "cargo"
-args = ["watch", "-x", "test", "${@}"]
+args = ["watch", "-x", "${@}"]
+
+[tasks.watchm]
+command = "cargo"
+args = ["watch", "-x", "make", "${@}"]
 
 [tasks.expand]
 command = "cargo"

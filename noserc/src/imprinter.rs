@@ -1,5 +1,5 @@
 use quote::quote;
-use syn::{spanned::Spanned, DataEnum, DataStruct, DeriveInput};
+use syn::{parse_quote, spanned::Spanned, DataEnum, DataStruct, DeriveInput};
 
 pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     match &input.data {
@@ -18,15 +18,24 @@ pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream
     }
 }
 
-pub(crate) fn struct_derive(input: DeriveInput, data: &DataStruct) -> crate::DeriveResult {
+pub(crate) fn struct_derive(mut input: DeriveInput, data: &DataStruct) -> crate::DeriveResult {
     use heck::ShoutySnakeCase;
 
     let name = input.ident;
+
+    for type_param in input.generics.type_params_mut() {
+        type_param
+            .bounds
+            .push(parse_quote!(::noser::traits::DefaultWriter));
+    }
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let types = data.fields.iter().map(|f| &f.ty);
     let types2 = data.fields.iter().map(|f| &f.ty);
+    let types3 = data.fields.iter().map(|f| &f.ty);
+    let types4 = data.fields.iter().map(|f| &f.ty);
+    let types5 = data.fields.iter().map(|f| &f.ty);
 
     let imprinter_struct_str = format!("Imprint{}", name.to_string());
     let imprinter_struct = syn::Ident::new(&imprinter_struct_str, proc_macro2::Span::call_site());
@@ -44,8 +53,8 @@ pub(crate) fn struct_derive(input: DeriveInput, data: &DataStruct) -> crate::Der
                 use noser::prelude::SliceExt;
                 #(
                 let imprinter = <#types as ::noser::traits::DefaultWriter>::writer();
-                let (left, arena) = arena.noser_split(imprinter.result_size())?;
-                imprinter.imprint(left)?;
+                let (left, arena) = arena.noser_split(::noser::traits::WriteTypeInfo::<#types2>::result_size(imprinter))?;
+                ::noser::traits::WriteTypeInfo::<#types3>::imprint(imprinter, left)?;
                 )*
                 Ok(())
             }
@@ -53,7 +62,7 @@ pub(crate) fn struct_derive(input: DeriveInput, data: &DataStruct) -> crate::Der
             #[inline]
             fn result_size(&self) -> ::noser::Ptr {
                 let mut size = 0;
-                #(size += <#types2 as ::noser::traits::DefaultWriter>::writer().result_size();)*
+                #(size += ::noser::traits::WriteTypeInfo::<#types4>::result_size(<#types5 as ::noser::traits::DefaultWriter>::writer());)*
                 size
             }
         }
@@ -61,16 +70,24 @@ pub(crate) fn struct_derive(input: DeriveInput, data: &DataStruct) -> crate::Der
         pub(crate) static #imprinter_static: #imprinter_struct = #imprinter_struct {};
 
         impl #impl_generics ::noser::traits::DefaultWriter for #name #ty_generics #where_clause {
+            type Writer = #imprinter_struct;
+
             #[inline]
-            fn writer() -> &'static ::noser::traits::WriteTypeInfo<Self> {
+            fn writer() -> &'static Self::Writer {
                 &#imprinter_static
             }
         }
     })
 }
 
-pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveResult {
+pub(crate) fn enum_derive(mut input: DeriveInput, data: &DataEnum) -> crate::DeriveResult {
     let name = input.ident;
+
+    for type_param in input.generics.type_params_mut() {
+        type_param
+            .bounds
+            .push(parse_quote!(::noser::traits::DefaultWriter));
+    }
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
@@ -85,12 +102,14 @@ pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveR
 
     let imprinters = data.variants.iter().map(|v| {
         let types = v.fields.iter().map(|f| &f.ty);
+        let types2 = v.fields.iter().map(|f| &f.ty);
+        let types3 = v.fields.iter().map(|f| &f.ty);
 
         quote! {
             #(
             let imprinter = <#types as ::noser::traits::DefaultWriter>::writer();
-            let (left, arena) = arena.noser_split(imprinter.result_size())?;
-            imprinter.imprint(left)?;
+            let (left, arena) = arena.noser_split(::noser::traits::WriteTypeInfo::<#types2>::result_size(imprinter))?;
+            ::noser::traits::WriteTypeInfo::<#types3>::imprint(imprinter, left)?;
             )*
             Ok(())
         }
@@ -98,9 +117,10 @@ pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveR
 
     let sizes = data.variants.iter().map(|v| {
         let types = v.fields.iter().map(|f| &f.ty);
+        let types2 = v.fields.iter().map(|f| &f.ty);
 
         quote! {
-            #(size += <#types as ::noser::traits::DefaultWriter>::writer().result_size();)*
+            #(size += ::noser::traits::WriteTypeInfo::<#types>::result_size(<#types2 as ::noser::traits::DefaultWriter>::writer());)*
         }
     });
 
@@ -114,7 +134,8 @@ pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveR
             #(#variants,)*
         }
 
-        impl #impl_generics ::noser::traits::WriteTypeInfo<#name #ty_generics> for #imprinter_enum #where_clause {            #[inline]
+        impl #impl_generics ::noser::traits::WriteTypeInfo<#name #ty_generics> for #imprinter_enum #where_clause {
+            #[inline]
             fn imprint(&self, arena: &mut [u8]) -> ::noser::Result<()> {
                 use noser::prelude::SliceExt;
 

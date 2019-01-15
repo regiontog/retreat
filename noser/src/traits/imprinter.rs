@@ -13,9 +13,13 @@ pub trait WriteTypeInfo<T> {
 }
 
 pub trait DefaultWriter: Sized {
-    // type Writer: WriteTypeInfo<Self> + 'static;
+    type Writer: WriteTypeInfo<Self> + 'static;
 
-    fn writer() -> &'static WriteTypeInfo<Self>;
+    fn writer() -> &'static Self::Writer;
+
+    fn trait_object_writer() -> &'static WriteTypeInfo<Self> {
+        Self::writer()
+    }
 
     #[inline]
     fn write_type(arena: &mut [u8]) -> crate::Result<()>

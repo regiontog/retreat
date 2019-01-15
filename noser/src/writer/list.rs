@@ -59,16 +59,20 @@ impl<'a, 'b, T> FromSlice<'a, 'b, T> {
     }
 }
 
-pub type WithCapacity<T> = ListWriter<TakeExactly<Take<Repeat<&'static dyn WriteTypeInfo<T>>>>>;
+pub type WithCapacity<'a, T> = ListWriter<TakeExactly<Take<Repeat<&'a dyn WriteTypeInfo<T>>>>>;
 
-impl<T> WithCapacity<T> {
+impl<'a, T> WithCapacity<'a, T> {
+    pub fn repeat(writer: &'a dyn WriteTypeInfo<T>, capacity: crate::Ptr) -> Self {
+        ListWriter::new(std::iter::repeat(writer).take_exactly(capacity as usize))
+    }
+
     pub fn with_capacity(capacity: crate::Ptr) -> Self
     where
         T: DefaultWriter,
     {
         let writer: &dyn WriteTypeInfo<T> = T::writer();
 
-        ListWriter::new(std::iter::repeat(writer).take_exactly(capacity as usize))
+        Self::repeat(writer, capacity)
     }
 }
 

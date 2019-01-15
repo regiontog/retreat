@@ -27,7 +27,7 @@ where
         self.iter
             .as_mut()
             .map(|iter| iter.next().map(Ok))
-            .unwrap_or_else(|| self.err.take().map(|e| Err(e)))
+            .unwrap_or_else(|| self.err.take().map(Err))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {

@@ -1,8 +1,6 @@
 use noser::traits::DefaultWriter;
-use noser::{List, Literal};
-use noserc::{Build, DynamicSizeable, StaticEnum, StaticSizeable, WriteTypeInfo};
-
-use freyr::prelude::*;
+use noser::{writer::list::WithCapacity, List, Literal};
+use noserc::{Build, DynamicSizeable, StaticSizeable, WriteTypeInfo};
 
 #[allow(dead_code)]
 #[derive(DynamicSizeable, Build)]
@@ -223,7 +221,7 @@ static NAMED_IMPRINTER: NamedImprinter = NamedImprinter {};
 
 impl<'a> ::noser::traits::WriteTypeInfo<Named<'a>> for NamedImprinter {
     fn imprint(&self, arena: &mut [u8]) -> ::noser::Result<()> {
-        let imprinter = <Literal<u8>>::writer();
+        let imprinter = <Literal<u8>>::trait_object_writer();
         let size = imprinter.result_size();
         imprinter.imprint(arena)?;
 
@@ -234,7 +232,7 @@ impl<'a> ::noser::traits::WriteTypeInfo<Named<'a>> for NamedImprinter {
 
     fn result_size(&self) -> ::noser::Ptr {
         let mut size = 0;
-        size += <Literal<u8>>::writer().result_size();
+        size += <Literal<u8>>::trait_object_writer().result_size();
         size += <List<Literal<u8>>>::with_capacity(3).result_size();
         size
     }
@@ -245,7 +243,7 @@ fn list_dynamic_struct() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::{get, List};
 
-    let mut arena = ListWriter::new(std::iter::repeat(&NAMED_IMPRINTER).take_exactly(10))
+    let mut arena = WithCapacity::repeat(&NAMED_IMPRINTER, 10)
         .create_buffer()
         .unwrap();
     let owned = <List<Named>>::create(&mut arena).unwrap();
@@ -356,7 +354,7 @@ fn out_of_bounds_list2_dynamic_struct() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::List;
 
-    let mut arena = ListWriter::new(std::iter::repeat(&NAMED_IMPRINTER).take_exactly(50))
+    let mut arena = WithCapacity::repeat(&NAMED_IMPRINTER, 50)
         .create_buffer()
         .unwrap();
 
@@ -369,7 +367,7 @@ fn in_bounds_list2_dynamic_struct() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::List;
 
-    let mut arena = ListWriter::new(std::iter::repeat(&NAMED_IMPRINTER).take_exactly(50))
+    let mut arena = WithCapacity::repeat(&NAMED_IMPRINTER, 50)
         .create_buffer()
         .unwrap();
 
@@ -385,10 +383,9 @@ fn list_dynamic_enum() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::{get, List};
 
-    let mut arena =
-        ListWriter::new(std::iter::repeat(&ImprintSingleVariantNamed::Val).take_exactly(10))
-            .create_buffer()
-            .unwrap();
+    let mut arena = WithCapacity::repeat(&ImprintSingleVariantNamed::Val, 10)
+        .create_buffer()
+        .unwrap();
     let owned = <List<SingleVariantNamed>>::create(&mut arena).unwrap();
 
     match get! { owned[0] } {
@@ -577,10 +574,9 @@ fn out_of_bounds_list2_dynamic_enum() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::List;
 
-    let mut arena =
-        ListWriter::new(std::iter::repeat(&ImprintSingleVariantNamed::Val).take_exactly(50))
-            .create_buffer()
-            .unwrap();
+    let mut arena = WithCapacity::repeat(&ImprintSingleVariantNamed::Val, 50)
+        .create_buffer()
+        .unwrap();
 
     let owned = List::<SingleVariantNamed>::create(&mut arena).unwrap();
     owned.borrow(50);
@@ -591,8 +587,7 @@ fn in_bounds_list2_dynamic_enum() {
     use noser::traits::{Build, WriteTypeInfo};
     use noser::List;
 
-    let writer =
-        ListWriter::new(std::iter::repeat(&ImprintSingleVariantNamed::Val).take_exactly(50));
+    let writer = WithCapacity::repeat(&ImprintSingleVariantNamed::Val, 50);
     // let arena: noser::Result<Vec<u8>> = writer.create_buffer();
     let arena = writer.create_buffer();
     let mut arena = arena.unwrap();

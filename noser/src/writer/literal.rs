@@ -24,7 +24,9 @@ impl<'a, T> DefaultWriter for Literal<'a, T>
 where
     T: LiteralInnerType,
 {
-    fn writer() -> &'static WriteTypeInfo<Self> {
+    type Writer = LiteralWriter;
+
+    fn writer() -> &'static Self::Writer {
         &WRITE_LITERAL_TYPE
     }
 }

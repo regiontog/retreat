@@ -1,6 +1,3 @@
-extern crate noser;
-extern crate noserc;
-
 pub mod net {
     use noser::{List, Literal};
     use noserc::{Build, SizableDynamic};

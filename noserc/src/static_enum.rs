@@ -1,5 +1,5 @@
 use quote::quote;
-use syn::{spanned::Spanned, DataEnum, DeriveInput};
+use syn::{parse_quote, spanned::Spanned, DataEnum, DeriveInput};
 
 pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     match &input.data {
@@ -14,8 +14,21 @@ pub(crate) fn derive(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream
     }
 }
 
-pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveResult {
-    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+pub(crate) fn enum_derive(mut input: DeriveInput, data: &DataEnum) -> crate::DeriveResult {
+    let options = crate::Options::from(&input.attrs)?;
+    let arena_generics = options.arena_generics(&input.generics);
+
+    for type_param in input.generics.type_params_mut() {
+        type_param.bounds.push(parse_quote!(
+            ::noser::traits::Build<#arena_generics>
+        ));
+        type_param
+            .bounds
+            .push(parse_quote!(::noser::traits::size::StaticSizeable));
+    }
+
+    let (impl_generics, ty_generics, where_clause) =
+        crate::split_for_impl_add(&mut input.generics, &arena_generics);
 
     let name = &input.ident;
 
@@ -75,10 +88,17 @@ pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveR
         )
     });
 
-    let types = data
-        .variants
-        .iter()
-        .flat_map(|v| v.fields.iter().map(|f| &f.ty));
+    let sizes = data.variants.iter().map(|variant| {
+        let types = variant.fields.iter().map(|f| &f.ty);
+
+        quote! {
+            {
+                let mut size = 0;
+                #(size += <#types as ::noser::traits::size::Sizeable>::static_size();)*
+                size
+            }
+        }
+    });
 
     Ok(quote! {
         enum #variant_enum {
@@ -103,32 +123,36 @@ pub(crate) fn enum_derive(input: DeriveInput, data: &DataEnum) -> crate::DeriveR
 
         }
 
-        impl #impl_generics ::noser::traits::StaticEnum for #name #ty_generics #where_clause {
+        impl #impl_generics ::noser::traits::StaticEnum<#arena_generics> for #name #ty_generics #where_clause {
             type VariantEnum = #variant_enum;
 
-            #[inline]
-            fn variant_bytes() -> usize {
-                #variant_bytes
+            const VARIANT_BYTES: usize = #variant_bytes;
+            const CONTENTS_SIZE: std::option::Option<usize> = None;
+
+            fn calculate_contents_size() -> usize {
+                let mut max_size = 0;
+                #(
+                    let maybe_max = #sizes;
+                    if maybe_max > max_size {
+                        max_size = maybe_max;
+                    }
+                )*
+                max_size as usize
             }
 
             #[inline]
-            fn static_size() -> usize {
-                use noser::traits::WriteTypeInfo;
+            fn construct_variant(variant: &Self::VariantEnum, arena: &#arena_generics mut [u8]) -> ::noser::Result<Self> {
+                use ::noser::traits::Build;
 
-                let mut size = 0;
-                #(size += <#types as ::noser::traits::DefaultWriter>::writer().result_size();)*
-                size as usize
-            }
-
-            #[inline]
-            fn construct_variant(variant: &Self::VariantEnum, arena: &mut [u8]) -> ::noser::Result<Self> {
                 match variant {
                     #(#variant_enum_repeat3::#variants4 => { #builders },)*
                 }
             }
 
             #[inline]
-            fn unchecked_construct_variant(variant: &Self::VariantEnum, arena: &mut [u8]) -> Self {
+            fn unchecked_construct_variant(variant: &Self::VariantEnum, arena: &#arena_generics mut [u8]) -> Self {
+                use ::noser::traits::Build;
+
                 match variant {
                     #(#variant_enum_repeat4::#variants5 => { #unsafe_builders },)*
                 }

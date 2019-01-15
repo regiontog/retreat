@@ -116,7 +116,7 @@ impl<'l, T> List<'l, T> {
         FromSlice::from_slice(item_types)
     }
 
-    pub fn with_capacity(capacity: ListLen) -> WithCapacity<T>
+    pub fn with_capacity(capacity: ListLen) -> WithCapacity<'static, T>
     where
         T: DefaultWriter,
     {
